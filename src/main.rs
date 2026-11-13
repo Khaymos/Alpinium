@@ -1,7 +1,9 @@
 mod config;
+mod nested;
 
 use config::Config;
 use std::env;
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -18,6 +20,8 @@ fn run() -> Result<(), String> {
     let mut explicit_config: Option<PathBuf> = None;
     let mut check_config = false;
     let mut print_config = false;
+    let mut start_nested = false;
+    let mut command: Option<OsString> = None;
 
     while let Some(argument) = args.next() {
         match argument.to_str() {
@@ -31,18 +35,37 @@ fn run() -> Result<(), String> {
             }
             Some("--check-config") => check_config = true,
             Some("--print-config") => print_config = true,
+            Some("--nested") => start_nested = true,
             Some("--config") => {
                 let path = args
                     .next()
                     .ok_or_else(|| "--config requires a file path".to_string())?;
                 explicit_config = Some(PathBuf::from(path));
             }
+            Some("--command") => {
+                let program = args
+                    .next()
+                    .ok_or_else(|| "--command requires a program name".to_string())?;
+                command = Some(program);
+            }
             Some(other) => return Err(format!("unknown argument '{other}'; use --help")),
             None => return Err("arguments must be valid UTF-8".to_string()),
         }
     }
 
+    if command.is_some() && !start_nested {
+        return Err("--command can only be used together with --nested".to_string());
+    }
+    if start_nested && (check_config || print_config) {
+        return Err("--nested cannot be combined with --check-config or --print-config".to_string());
+    }
+
     let (config, source) = Config::load(explicit_config.as_deref())?;
+
+    if start_nested {
+        return nested::run(config, source, command).map_err(|error| error.to_string());
+    }
+
     let source_description = source
         .as_ref()
         .map(|path| path.display().to_string())
@@ -73,7 +96,7 @@ fn run() -> Result<(), String> {
     println!("Alpinium {VERSION} — compositor development build");
     println!("Loaded configuration: {source_description}");
     println!("Selected layout mode: {}", config.mode);
-    println!("The Wayland compositor backend is not implemented yet.");
+    println!("The nested Wayland compositor is available with --nested.");
     println!("Use --check-config to validate a config or --help for options.");
     Ok(())
 }
@@ -86,6 +109,8 @@ fn print_help() {
     println!("  --config PATH     Load a specific configuration file");
     println!("  --check-config    Parse and validate the selected configuration");
     println!("  --print-config    Print the effective configuration");
+    println!("  --nested          Start Alpinium inside the current graphical session");
+    println!("  --command PROGRAM Launch PROGRAM as a client inside the nested compositor");
     println!("  --version         Print version information");
     println!("  -h, --help        Print this help message");
 }

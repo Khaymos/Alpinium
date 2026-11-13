@@ -10,24 +10,24 @@
 
 ## Milestone 1 — nested Wayland backend
 
-- [ ] Select and pin the Smithay revision/features.
-- [ ] Add a nested development backend.
-- [ ] Start an Alpinium Wayland display.
-- [ ] Render a basic background and output.
-- [ ] Accept a simple Wayland client surface.
+- [x] Integrate Smithay's Winit backend and Wayland frontend.
+- [x] Create a nested Wayland display/socket and output.
+- [x] Add initial XDG shell, SHM, seat, and output protocol state.
+- [ ] Verify nested startup and render a real client on developer hardware.
+- [ ] Harden client lifecycle, focus, pointer, and keyboard handling.
 
 ## Milestone 2 — compositor basics
 
-- [ ] Input devices and keyboard focus.
-- [ ] Surface map/unmap lifecycle.
+- [ ] Surface map/unmap lifecycle and robust focus policy.
 - [ ] Move, resize, focus, and close requests.
 - [ ] Basic command/IPC interface.
+- [ ] Output resize and hotplug handling.
 
 ## Milestone 3 — layout modes
 
 - [ ] Tiling layout engine.
 - [ ] Floating layout engine.
-- [ ] Configuration-selected global mode.
+- [ ] Apply the config-selected global mode to new and existing windows.
 - [ ] Workspaces and output management.
 
 ## Milestone 4 — visual system

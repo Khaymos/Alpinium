@@ -7,7 +7,18 @@ Alpinium is one Wayland compositor with two selectable global layout modes:
 - **Tiling:** the compositor arranges managed windows according to the active tiling policy.
 - **Floating:** windows are positioned and resized freely, with focus and stacking handled by the compositor.
 
-The selected mode is loaded from **mode tiling** or **mode floating** in the config. The same rendering, input, protocol, configuration, and effects infrastructure is shared by both modes.
+The selected mode is loaded from the mode directive in the config. The same rendering, input, protocol, configuration, and effects infrastructure is shared by both modes.
+
+## Current implementation
+
+The codebase now has:
+- A configuration model and parser.
+- Configuration-file discovery and validation.
+- An initial Smithay-based nested backend using the Winit host window.
+- A Wayland display/socket and basic XDG shell, SHM, seat, output and data-device protocol state.
+- Rendering of the nested output and forwarding of host input events.
+
+This backend is an early milestone. It has not yet been verified on every target system, and window-management policies remain rudimentary.
 
 ## Planned layers
 
@@ -17,10 +28,10 @@ Alpinium process
 │   ├── file discovery and precedence
 │   ├── parser and validation
 │   └── runtime settings
-├── Wayland backend (planned: Smithay)
-│   ├── session and device management
-│   ├── input events
-│   ├── outputs and rendering
+├── Wayland backend (Smithay)
+│   ├── nested Winit backend (initial)
+│   ├── future DRM/session backend
+│   ├── input and output management
 │   └── Wayland protocol globals
 ├── Compositor core
 │   ├── clients and surfaces
@@ -41,12 +52,6 @@ Alpinium process
     └── desktop portal and XWayland integration
 ~~~
 
-## Backend choice
-
-The current plan is to use Smithay as the low-level Wayland compositor library. Smithay provides protocol and system-level building blocks; it does not provide Alpinium's window-management policy or drawing logic. Those remain Alpinium responsibilities.
-
-The first backend milestone should run nested under an existing Wayland compositor for safer development. Direct DRM/TTY session support should come after nested rendering and input work reliably.
-
 ## Design constraints
 
 - Keep tiling and floating policies independent from the Wayland backend.
@@ -56,6 +61,6 @@ The first backend milestone should run nested under an existing Wayland composit
 - Treat missing, malformed, or unsupported configuration as a clear diagnostic, not a silent fallback.
 - Avoid requiring systemd; KhaymOS uses OpenRC.
 
-## Not implemented yet
+## Development strategy
 
-This document is the target architecture, not a claim that those subsystems already exist. The current code implements the first config model/parser and a validation CLI only.
+Develop and test the compositor nested inside an existing Wayland session first. Direct DRM/TTY session support should come after nested rendering, input, and window management work reliably.

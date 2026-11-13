@@ -16,14 +16,14 @@
 
 Alpinium is the planned native Wayland compositor for the KhaymOS ecosystem. It will support both tiling and floating window management, selected globally through the user's configuration file.
 
-Both modes share the same compositor, configuration system, decorations, and visual-effects engine. Alpinium is one compositor with two selectable modes — not two separate window managers.
+Both modes will share the same compositor, configuration system, decorations, and visual-effects engine. Alpinium is one compositor with two selectable modes — not two separate window managers.
 
-> **Development status:** this repository currently contains the Rust project scaffold and the first configuration-loader milestone. It is not yet a usable Wayland compositor. Rendering, input handling, window management, and desktop integration are still under development.
+> **Development status:** the repository contains a configuration parser and an initial Smithay-based nested Wayland backend. The nested backend is an early development implementation; tiling/floating layout policies, decorations, animations, and production session support are not complete.
 
 ## Design goals
 
-- **Two layout modes:** choose **tiling** or **floating** with one configuration directive.
-- **User-configurable:** user config at **~/.config/alpinium/config**; system default at **/etc/alpinium/config**.
+- **Two layout modes:** choose tiling or floating with one configuration directive.
+- **User-configurable:** user config at ~/.config/alpinium/config; system default at /etc/alpinium/config.
 - **Shared visual system:** animations, rounded corners, shadows, gaps, and future effects behave consistently in either mode.
 - **Native Wayland:** built as a Wayland compositor, not an X11-only window manager.
 - **KhaymOS integration:** first-party KhaymOS desktop component, with portable configuration.
@@ -31,7 +31,7 @@ Both modes share the same compositor, configuration system, decorations, and vis
 
 ## Configuration
 
-Alpinium uses a Sway-inspired, line-oriented configuration format. The first parser milestone supports a deliberately small set of directives:
+Alpinium uses a Sway-inspired, line-oriented configuration format.
 
 ~~~conf
 # ~/.config/alpinium/config
@@ -52,51 +52,58 @@ gaps outer 5
 
 Alpinium checks the following locations in order:
 
-1. **--config PATH**, when explicitly supplied on the command line.
-2. **$XDG_CONFIG_HOME/alpinium/config**, when set to an absolute path.
-3. **~/.config/alpinium/config**.
-4. **/etc/alpinium/config**.
-5. Built-in defaults if no file exists.
+1. --config PATH, when explicitly supplied on the command line.
+2. $XDG_CONFIG_HOME/alpinium/config, when set to an absolute path.
+3. ~/.config/alpinium/config.
+4. /etc/alpinium/config.
+5. Built-in defaults if no file is found.
 
 The first matching file is loaded as a complete configuration; user and system configs are not merged in this milestone. An explicitly supplied but missing or invalid file produces an error rather than silently falling back.
 
-The default config in this repository is **config/alpinium.default.conf**. KhaymOS packaging will install it as **/etc/alpinium/config**.
+The default config in this repository is config/alpinium.default.conf. KhaymOS packaging will install it as /etc/alpinium/config.
 
 See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for supported directives and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the planned compositor architecture.
 
-## Build the current scaffold
+## Build and test
 
-Requirements: Rust 1.87 or newer and Cargo.
+Requirements: Rust 1.88 or newer, Cargo, and the native Wayland/EGL/X11 development libraries needed by Smithay's nested backend.
 
 ~~~sh
 git clone https://github.com/Khaymos/Alpinium.git
 cd Alpinium
 cargo test
 cargo run -- --check-config
-cargo run -- --print-config
+cargo run -- --config config/alpinium.default.conf --check-config
 ~~~
 
-Validate a specific config:
+## Run the nested compositor
+
+The first backend uses Smithay's Winit backend to open Alpinium in a normal desktop window. It does not replace your current session.
+
+To launch Alpinium with Alacritty as a nested Wayland client:
 
 ~~~sh
-cargo run -- --config ./config/alpinium.default.conf --check-config
+cargo run -- --nested --config config/alpinium.default.conf --command alacritty
 ~~~
 
-The current executable validates and displays configuration only. It does not start a Wayland session yet.
+The nested backend creates its own Wayland socket under the current user's runtime directory and launches the requested client with that socket in WAYLAND_DISPLAY.
+
+At this stage the backend can host basic Wayland clients, but window placement is still rudimentary. The configured layout mode is loaded and reported; the actual tiling and floating layout policies are still being developed.
 
 ## Planned technology
 
-The compositor backend is planned around [Smithay](https://github.com/Smithay/smithay), a Rust library providing Wayland compositor building blocks and system backends. Alpinium will implement its own window-management policy, tiling/floating layouts, decorations, animation engine, and configuration semantics.
+Alpinium uses [Smithay](https://github.com/Smithay/smithay) as its low-level Wayland compositor library. Smithay provides protocol and system-level building blocks; Alpinium implements its own window-management policy, tiling/floating layouts, decorations, animation engine, and configuration semantics.
 
-The Smithay dependency will be introduced with the first backend milestone, after the required backend features and KhaymOS runtime dependencies are selected.
+The nested development backend is based on the structure of Smithay's Smallvil example. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Roadmap
 
-- [x] Rust project scaffold and configuration model.
-- [x] **mode tiling** and **mode floating** parser.
-- [x] Configuration validation CLI and unit tests.
-- [ ] Smithay-based nested development backend.
-- [ ] Display and manage basic Wayland client surfaces.
+- [x] Rust project scaffold and configuration parser.
+- [x] mode tiling and mode floating config support.
+- [x] User/system configuration lookup and validation CLI.
+- [x] Initial Smithay nested backend integration.
+- [ ] Build and verify the nested backend on developer machines and CI.
+- [ ] Display and manage Wayland client surfaces reliably.
 - [ ] Implement tiling and floating layout engines.
 - [ ] Add keybindings, workspaces, and output management.
 - [ ] Add decorations, animations, shadows, and rounded corners.
@@ -108,4 +115,4 @@ Alpinium is part of the KhaymOS project. Contributions, design discussions, bug 
 
 ## License
 
-Alpinium is licensed under the [MIT License](LICENSE).
+Alpinium is licensed under the MIT License (see LICENSE).
