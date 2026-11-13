@@ -18,7 +18,7 @@ use smithay::{
         PointerInnerHandle, RelativeMotionEvent,
     },
     reexports::wayland_server::protocol::wl_surface::WlSurface,
-    utils::{Logical, Point, SERIAL_COUNTER},
+    utils::{Logical, Point},
 };
 
 pub struct MoveSurfaceGrab {
@@ -1062,7 +1062,7 @@ use smithay::{
             protocol::wl_surface::WlSurface,
         },
     },
-    utils::{Logical, Point},
+    utils::{Logical, Point, SERIAL_COUNTER},
     wayland::{
         compositor::{CompositorClientState, CompositorState},
         output::OutputManagerState,
@@ -1425,7 +1425,6 @@ pub fn init_winit(
             WinitEvent::CloseRequested => {
                 state.loop_signal.stop();
             }
-            _ => (),
         };
     })?;
 
