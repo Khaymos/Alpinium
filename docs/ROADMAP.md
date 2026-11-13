@@ -19,9 +19,10 @@
 
 ## Milestone 2 — compositor basics
 
-- [ ] Surface map/unmap lifecycle and robust focus policy.
+- [x] Initial XDG toplevel buffer map/unmap/remap tracking and destruction cleanup.
+- [x] Recover keyboard focus when the focused toplevel unmaps or is destroyed.
 - [x] Initial keyboard-driven focus and client close requests.
-- [ ] Improve client close/unmap lifecycle and pointer focus behavior.
+- [ ] Harden lifecycle behavior under unusual client/protocol sequences and improve pointer focus.
 - [ ] Basic command/IPC interface.
 - [ ] Output resize and hotplug handling.
 
