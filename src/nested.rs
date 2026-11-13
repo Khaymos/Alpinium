@@ -823,17 +823,14 @@ use crate::nested::AlpiniumState;
 // Wl Seat
 //
 
-use smithay::input::dnd::{DnDGrab, DndGrabHandler, GrabType, Source};
-use smithay::input::pointer::Focus;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::Serial;
 use smithay::wayland::output::OutputHandler;
-use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::data_device::{
-    DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler, set_data_device_focus,
+    ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler,
+    set_data_device_focus,
 };
 
 impl SeatHandler for AlpiniumState {
@@ -854,7 +851,7 @@ impl SeatHandler for AlpiniumState {
     }
 }
 
-impl PointerConstraintsHandler for AlpiniumState {}
+// Pointer constraints will be wired when Alpinium adds a pointer-constraints state/global.
 
 //
 // Wl Data Device
@@ -865,37 +862,15 @@ impl SelectionHandler for AlpiniumState {
 }
 
 impl DataDeviceHandler for AlpiniumState {
-    fn data_device_state(&mut self) -> &mut DataDeviceState {
-        &mut self.data_device_state
+    fn data_device_state(&self) -> &DataDeviceState {
+        &self.data_device_state
     }
 }
 
-impl DndGrabHandler for AlpiniumState {}
-impl WaylandDndGrabHandler for AlpiniumState {
-    fn dnd_requested<S: Source>(
-        &mut self,
-        source: S,
-        _icon: Option<WlSurface>,
-        seat: Seat<Self>,
-        serial: Serial,
-        type_: GrabType,
-    ) {
-        match type_ {
-            GrabType::Pointer => {
-                let ptr = seat.get_pointer().unwrap();
-                let start_data = ptr.grab_start_data().unwrap();
-
-                // create a dnd grab to start the operation
-                let grab = DnDGrab::new_pointer(&self.display_handle, start_data, source, seat);
-                ptr.set_grab(self, grab, serial, Focus::Keep);
-            }
-            GrabType::Touch => {
-                // smallvil lacks touch handling
-                source.cancel();
-            }
-        }
-    }
-}
+// Smithay 0.7 provides client/server DnD handling through these traits.
+// The default callbacks are sufficient for this initial nested backend.
+impl ClientDndGrabHandler for AlpiniumState {}
+impl ServerDndGrabHandler for AlpiniumState {}
 
 //
 // Wl Output & Xdg Output
@@ -903,7 +878,12 @@ impl WaylandDndGrabHandler for AlpiniumState {
 
 impl OutputHandler for AlpiniumState {}
 
-smithay::delegate_dispatch2!(AlpiniumState);
+smithay::delegate_compositor!(AlpiniumState);
+smithay::delegate_data_device!(AlpiniumState);
+smithay::delegate_output!(AlpiniumState);
+smithay::delegate_seat!(AlpiniumState);
+smithay::delegate_shm!(AlpiniumState);
+smithay::delegate_xdg_shell!(AlpiniumState);
 
 }
 mod input {
