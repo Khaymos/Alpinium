@@ -1,5 +1,6 @@
 mod config;
 mod layout;
+mod keybindings;
 mod nested;
 
 use config::Config;
