@@ -1153,7 +1153,7 @@ impl AlpiniumState {
     }
 
     /// Find a live tracked toplevel by its root wl_surface.
-    fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
+    pub fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
         self.window_order
             .iter()
             .find(|window| {
@@ -1197,17 +1197,23 @@ impl AlpiniumState {
         self.recover_focus_after_removal(was_focused);
         self.apply_layout();
 
-        // XDG toplevels need a fresh initial configure before they can map again.
-        if let Some(toplevel) = window.toplevel() {
-            toplevel.send_pending_configure();
-        }
     }
 
     /// Track a buffer attach/detach transition for a known toplevel.
-    fn update_window_buffer_state(&mut self, window: &Window, has_buffer: bool) {
+    pub fn update_window_buffer_state(&mut self, window: &Window, has_buffer: bool) {
         let was_attached = self.buffer_attached_windows.contains(window);
         match crate::window_lifecycle::buffer_transition(was_attached, has_buffer) {
-            crate::window_lifecycle::BufferTransition::Unchanged => {}
+            crate::window_lifecycle::BufferTransition::Unchanged => {
+                // After an unmap, XDG requires another bufferless commit before
+                // the compositor sends the configure that permits the next map.
+                if !has_buffer {
+                    if let Some(toplevel) = window.toplevel() {
+                        if !toplevel.is_initial_configure_sent() {
+                            toplevel.send_pending_configure();
+                        }
+                    }
+                }
+            }
             crate::window_lifecycle::BufferTransition::Attached => {
                 self.buffer_attached_windows.push(window.clone());
 
@@ -1240,7 +1246,7 @@ impl AlpiniumState {
     }
 
     /// Remove a destroyed toplevel permanently from compositor tracking.
-    fn destroy_window(&mut self, surface: &WlSurface) {
+    pub fn destroy_window(&mut self, surface: &WlSurface) {
         let Some(window) = self.window_for_surface(surface) else {
             return;
         };
