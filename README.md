@@ -18,7 +18,7 @@ Alpinium is the planned native Wayland compositor for the KhaymOS ecosystem. It 
 
 Both modes will share the same compositor, configuration system, decorations, and visual-effects engine. Alpinium is one compositor with two selectable modes — not two separate window managers.
 
-> **Development status:** the repository contains a configuration parser and an initial Smithay-based nested Wayland backend. The nested backend is an early development implementation; tiling/floating layout policies, decorations, animations, and production session support are not complete.
+> **Development status:** the repository contains a configuration parser, a Smithay-based nested Wayland backend, and the first working master-stack tiling/floating policies. This is still an early development compositor; decorations, animations, advanced layout controls, and production session support are not complete.
 
 ## Design goals
 
@@ -88,7 +88,11 @@ cargo run -- --nested --config config/alpinium.default.conf --command alacritty
 
 The nested backend creates its own Wayland socket under the current user's runtime directory and launches the requested client with that socket in WAYLAND_DISPLAY.
 
-At this stage the backend can host basic Wayland clients, but window placement is still rudimentary. The configured layout mode is loaded and reported; the actual tiling and floating layout policies are still being developed.
+The nested backend currently supports two global modes:
+- **Tiling:** the first mapped window is the master on the left; later windows share a vertical stack on the right. Inner and outer gaps come from the config. Client move/resize requests are ignored while tiling owns the geometry.
+- **Floating:** windows can be moved and resized freely using the existing pointer grabs.
+
+The first layout policy is intentionally simple. Workspaces, configurable master ratios, keyboard-driven window management, decorations, and effects are still planned.
 
 ## Planned technology
 
@@ -104,7 +108,7 @@ The nested development backend is based on the structure of Smithay's Smallvil e
 - [x] Initial Smithay nested backend integration.
 - [ ] Build and verify the nested backend on developer machines and CI.
 - [ ] Display and manage Wayland client surfaces reliably.
-- [ ] Implement tiling and floating layout engines.
+- [x] Implement the first master-stack tiling and floating layout policies.
 - [ ] Add keybindings, workspaces, and output management.
 - [ ] Add decorations, animations, shadows, and rounded corners.
 - [ ] Integrate Alpinium into KhaymOS profiles and installer.
