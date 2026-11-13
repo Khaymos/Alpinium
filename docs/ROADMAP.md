@@ -14,12 +14,14 @@
 - [x] Create a nested Wayland display/socket and output.
 - [x] Add initial XDG shell, SHM, seat, and output protocol state.
 - [x] Verify nested startup and render a real client on developer hardware.
-- [ ] Harden client lifecycle, focus, pointer, and keyboard handling.
+- [ ] Harden client lifecycle and pointer handling.
+- [x] Add initial keyboard focus cycling and close-request shortcuts.
 
 ## Milestone 2 — compositor basics
 
 - [ ] Surface map/unmap lifecycle and robust focus policy.
-- [ ] Move, resize, focus, and close requests.
+- [x] Initial keyboard-driven focus and client close requests.
+- [ ] Improve client close/unmap lifecycle and pointer focus behavior.
 - [ ] Basic command/IPC interface.
 - [ ] Output resize and hotplug handling.
 
