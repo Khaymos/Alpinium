@@ -907,7 +907,7 @@ impl AlpiniumState {
         match event {
             InputEvent::Keyboard { event, .. } => {
                 let serial = SERIAL_COUNTER.next_serial();
-                let time = Event::time(&event);
+                let time = Event::time_msec(&event);
 
                 self.seat.get_keyboard().unwrap().input::<(), _>(
                     self,
@@ -938,7 +938,7 @@ impl AlpiniumState {
                     &MotionEvent {
                         location: pos,
                         serial,
-                        time: event.time(),
+                        time: event.time_msec(),
                     },
                 );
                 pointer.frame(self);
@@ -983,7 +983,7 @@ impl AlpiniumState {
                         button,
                         state: button_state,
                         serial,
-                        time: event.time(),
+                        time: event.time_msec(),
                     },
                 );
                 pointer.frame(self);
@@ -1000,7 +1000,7 @@ impl AlpiniumState {
                 let horizontal_amount_discrete = event.amount_v120(Axis::Horizontal);
                 let vertical_amount_discrete = event.amount_v120(Axis::Vertical);
 
-                let mut frame = AxisFrame::new(event.time()).source(source);
+                let mut frame = AxisFrame::new(event.time_msec()).source(source);
                 if horizontal_amount != 0.0 {
                     frame = frame.value(Axis::Horizontal, horizontal_amount);
                     if let Some(discrete) = horizontal_amount_discrete {
@@ -1242,7 +1242,6 @@ pub fn init_winit(
             subpixel: Subpixel::Unknown,
             make: "Smithay".into(),
             model: "Winit".into(),
-            serial_number: "Unknown".into(),
         },
     );
     let _global = output.create_global::<AlpiniumState>(&state.display_handle);
