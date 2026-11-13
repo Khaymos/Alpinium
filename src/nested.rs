@@ -542,7 +542,7 @@ mod handlers {
 mod compositor {
 use crate::nested::{AlpiniumState, grabs::resize_grab, state::ClientState};
 use smithay::{
-    backend::renderer::utils::on_commit_buffer_handler,
+    backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state},
     reexports::wayland_server::{
         Client,
         protocol::{wl_buffer, wl_surface::WlSurface},
@@ -574,12 +574,18 @@ impl CompositorHandler for AlpiniumState {
             while let Some(parent) = get_parent(&root) {
                 root = parent;
             }
-            if let Some(window) = self
-                .space
-                .elements()
-                .find(|w| w.toplevel().unwrap().wl_surface() == &root)
-            {
+            if let Some(window) = self.window_for_surface(&root) {
                 window.on_commit();
+
+                // Only a commit on the toplevel itself changes its mapped state.
+                // Subsurface commits still update the window's bounding box above.
+                if &root == surface {
+                    if let Some(has_buffer) =
+                        with_renderer_surface_state(&root, |state| state.buffer().is_some())
+                    {
+                        self.update_window_buffer_state(&window, has_buffer);
+                    }
+                }
             }
         };
 
@@ -639,6 +645,10 @@ impl XdgShellHandler for AlpiniumState {
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let window = Window::new_wayland_window(surface);
         self.map_window(window);
+    }
+
+    fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        self.destroy_window(surface.wl_surface());
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
@@ -1108,8 +1118,12 @@ pub struct AlpiniumState {
     pub display_handle: DisplayHandle,
 
     pub space: Space<Window>,
-    /// Stable creation order used to choose the master independently from focus order.
+    /// Stable order of all live toplevels, including temporarily unmapped ones.
     window_order: Vec<Window>,
+    /// Toplevels whose current surface commit has an attached renderer buffer.
+    buffer_attached_windows: Vec<Window>,
+    /// Last position retained while a toplevel is unmapped.
+    unmapped_window_locations: Vec<(Window, Point<i32, Logical>)>,
     /// Last focused window, retained while the host window is unfocused.
     focused_window: Option<Window>,
     pub loop_signal: LoopSignal,
@@ -1136,6 +1150,111 @@ impl AlpiniumState {
             .filter(|window| mapped.contains(window))
             .cloned()
             .collect()
+    }
+
+    /// Find a live tracked toplevel by its root wl_surface.
+    fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
+        self.window_order
+            .iter()
+            .find(|window| {
+                window
+                    .toplevel()
+                    .is_some_and(|toplevel| toplevel.wl_surface() == surface)
+            })
+            .cloned()
+    }
+
+    /// Keep keyboard focus valid when its current window disappears from the space.
+    fn recover_focus_after_removal(&mut self, removed_was_focused: bool) {
+        if !removed_was_focused {
+            return;
+        }
+
+        self.focused_window = None;
+        self.focus_relative(false);
+        if self.focused_window.is_none() {
+            self.clear_focus(SERIAL_COUNTER.next_serial());
+        }
+    }
+
+    /// Remove a temporarily-unmapped toplevel from the visible space.
+    fn unmap_window(&mut self, window: &Window) {
+        if let Some(location) = self.space.element_location(window) {
+            if let Some((_, saved_location)) = self
+                .unmapped_window_locations
+                .iter_mut()
+                .find(|(saved, _)| saved == window)
+            {
+                *saved_location = location;
+            } else {
+                self.unmapped_window_locations.push((window.clone(), location));
+            }
+        }
+
+        let was_focused = self.focused_window.as_ref() == Some(window);
+        window.set_activated(false);
+        self.space.unmap_elem(window);
+        self.recover_focus_after_removal(was_focused);
+        self.apply_layout();
+
+        // XDG toplevels need a fresh initial configure before they can map again.
+        if let Some(toplevel) = window.toplevel() {
+            toplevel.send_pending_configure();
+        }
+    }
+
+    /// Track a buffer attach/detach transition for a known toplevel.
+    fn update_window_buffer_state(&mut self, window: &Window, has_buffer: bool) {
+        let was_attached = self.buffer_attached_windows.contains(window);
+        match crate::window_lifecycle::buffer_transition(was_attached, has_buffer) {
+            crate::window_lifecycle::BufferTransition::Unchanged => {}
+            crate::window_lifecycle::BufferTransition::Attached => {
+                self.buffer_attached_windows.push(window.clone());
+
+                let already_mapped = self.space.elements().any(|mapped| mapped == window);
+                if !already_mapped {
+                    let location = self
+                        .unmapped_window_locations
+                        .iter()
+                        .find(|(saved, _)| saved == window)
+                        .map(|(_, location)| *location)
+                        .unwrap_or_else(|| Point::from((0, 0)));
+                    self.unmapped_window_locations
+                        .retain(|(saved, _)| saved != window);
+                    self.space.map_element(window.clone(), location, false);
+                    self.apply_layout();
+
+                    if self.focused_window.is_none() {
+                        self.focus_window(window, SERIAL_COUNTER.next_serial());
+                    } else if let Some(toplevel) = window.toplevel() {
+                        toplevel.send_pending_configure();
+                    }
+                }
+            }
+            crate::window_lifecycle::BufferTransition::Detached => {
+                self.buffer_attached_windows
+                    .retain(|attached| attached != window);
+                self.unmap_window(window);
+            }
+        }
+    }
+
+    /// Remove a destroyed toplevel permanently from compositor tracking.
+    fn destroy_window(&mut self, surface: &WlSurface) {
+        let Some(window) = self.window_for_surface(surface) else {
+            return;
+        };
+
+        self.window_order.retain(|tracked| tracked != &window);
+        self.buffer_attached_windows
+            .retain(|attached| attached != &window);
+        self.unmapped_window_locations
+            .retain(|(saved, _)| saved != &window);
+
+        let was_focused = self.focused_window.as_ref() == Some(&window);
+        self.space.unmap_elem(&window);
+        self.recover_focus_after_removal(was_focused);
+        self.apply_layout();
     }
 
     /// Focus and raise a mapped toplevel without changing its master/stack order.
@@ -1242,23 +1361,21 @@ impl AlpiniumState {
         self.apply_layout();
     }
 
-    /// Reconcile mapped windows with the configured global layout mode.
+    /// Reconcile currently mapped windows with the configured global layout mode.
     ///
-    /// This is safe to call after refresh: locations and sizes are only
-    /// updated when their target geometry changes.
+    /// The creation-order list retains temporarily-unmapped toplevels so they
+    /// can be mapped again without losing their identity or floating position.
     pub fn apply_layout(&mut self) {
-        let mapped_windows: Vec<Window> = self.space.elements().cloned().collect();
-        self.window_order
-            .retain(|window| mapped_windows.contains(window));
+        let windows = self.ordered_windows();
         if self
             .focused_window
             .as_ref()
-            .is_some_and(|focused| !mapped_windows.contains(focused))
+            .is_some_and(|focused| !windows.contains(focused))
         {
             self.focused_window = None;
         }
 
-        if self.config.mode != LayoutMode::Tiling {
+        if self.config.mode != LayoutMode::Tiling || windows.is_empty() {
             return;
         }
 
@@ -1269,10 +1386,6 @@ impl AlpiniumState {
             return;
         };
 
-        if self.window_order.is_empty() {
-            return;
-        }
-
         let area = LayoutRect::new(
             output_geometry.loc.x,
             output_geometry.loc.y,
@@ -1281,12 +1394,11 @@ impl AlpiniumState {
         );
         let placements = master_stack_layout(
             area,
-            self.window_order.len(),
+            windows.len(),
             self.config.outer_gap,
             self.config.inner_gap,
         );
 
-        let windows = self.window_order.clone();
         for (window, placement) in windows.into_iter().zip(placements) {
             let location = Point::from((placement.x, placement.y));
             if self.space.element_location(&window) != Some(location) {
@@ -1363,6 +1475,8 @@ impl AlpiniumState {
 
             space,
             window_order: Vec::new(),
+            buffer_attached_windows: Vec::new(),
+            unmapped_window_locations: Vec::new(),
             focused_window: None,
             loop_signal,
             socket_name,
