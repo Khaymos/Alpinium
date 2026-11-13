@@ -24,6 +24,8 @@ The layout calculation is isolated in `src/layout.rs` and has unit tests indepen
 
 The initial keyboard shortcut layer is isolated in `src/keybindings.rs`. Smithay's keyboard filter intercepts Super+Tab and Super+Shift+Tab for focus cycling, and Super+Q to send an XDG toplevel close request. Other key events continue to the focused client. The last-focused window is retained while the host Winit window is unfocused.
 
+The nested backend also tracks XDG toplevel buffer transitions. A buffer detach removes the window from the visible space and triggers focus recovery when necessary; a subsequent bufferless commit completes the XDG initial-configure handshake before remapping. Remapped windows retain their prior position in floating mode. Destroyed toplevels are removed from compositor tracking, including the stable creation-order list. The pure buffer-transition classifier is covered by unit tests in `src/window_lifecycle.rs`; interactive lifecycle behavior still needs runtime testing with clients that unmap and remap themselves.
+
 ## Planned layers
 
 ~~~text
