@@ -18,7 +18,7 @@ use smithay::{
         PointerInnerHandle, RelativeMotionEvent,
     },
     reexports::wayland_server::protocol::wl_surface::WlSurface,
-    utils::{Logical, Point},
+    utils::{Logical, Point, SERIAL_COUNTER},
 };
 
 pub struct MoveSurfaceGrab {
@@ -1097,10 +1097,35 @@ pub struct AlpiniumState {
 }
 
 impl AlpiniumState {
-    /// Add a newly-created toplevel and apply the active layout policy.
+    /// Focus a mapped toplevel on the compositor's keyboard.
+    fn focus_window(&mut self, window: &Window) {
+        if let Some(toplevel) = window.toplevel() {
+            let surface = toplevel.wl_surface().clone();
+            let keyboard = self.seat.get_keyboard().unwrap();
+            keyboard.set_focus(self, Some(surface), SERIAL_COUNTER.next_serial());
+            toplevel.send_pending_configure();
+        }
+    }
+
+    /// Keep keyboard focus in sync with the host Winit window.
+    pub fn handle_host_focus(&mut self, focused: bool) {
+        let surface = if focused {
+            self.space.elements().last().and_then(|window| {
+                window.toplevel().map(|toplevel| toplevel.wl_surface().clone())
+            })
+        } else {
+            None
+        };
+
+        let keyboard = self.seat.get_keyboard().unwrap();
+        keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
+    }
+
+    /// Add a newly-created toplevel, focus it, and apply the active layout policy.
     pub fn map_window(&mut self, window: Window) {
         self.window_order.push(window.clone());
-        self.space.map_element(window, (0, 0), false);
+        self.space.map_element(window.clone(), (0, 0), false);
+        self.focus_window(&window);
         self.apply_layout();
     }
 
@@ -1352,6 +1377,7 @@ pub fn init_winit(
                 );
             }
             WinitEvent::Input(event) => state.process_input_event(event),
+            WinitEvent::Focus(focused) => state.handle_host_focus(focused),
             WinitEvent::Redraw => {
                 state.space.refresh();
                 state.apply_layout();
