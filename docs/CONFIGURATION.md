@@ -62,4 +62,16 @@ alpinium --print-config
 alpinium --config /path/to/config --check-config
 ~~~
 
+## Built-in keyboard shortcuts
+
+The nested backend currently provides these fixed defaults:
+
+| Shortcut | Action |
+| --- | --- |
+| Super+Tab | Focus the next mapped window. |
+| Super+Shift+Tab | Focus the previous mapped window. |
+| Super+Q | Send a Wayland close request to the focused client. |
+
+Super is the keyboard's Logo/Windows modifier. These shortcuts are built into the current development backend and are not configurable through the config file yet. A close request is advisory: the client decides whether to close.
+
 The parser reports the line number for malformed or unknown directives.
