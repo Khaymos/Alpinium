@@ -18,7 +18,9 @@ The codebase now has:
 - A Wayland display/socket and basic XDG shell, SHM, seat, output and data-device protocol state.
 - Rendering of the nested output and forwarding of host input events.
 
-This backend is an early milestone. It has not yet been verified on every target system, and window-management policies remain rudimentary.
+The nested backend now includes a first working master-stack layout policy. The first mapped window occupies the left master area; remaining windows are stacked vertically on the right. Inner and outer gaps are applied from configuration. Floating mode leaves placement to pointer move/resize grabs, while tiling mode ignores those client requests.
+
+The layout calculation is isolated in `src/layout.rs` and has unit tests independent of Smithay. The nested backend reapplies layout after window lifecycle changes and output redraw/resize events. This remains an early milestone and has not been verified on every target system.
 
 ## Planned layers
 
@@ -39,8 +41,8 @@ Alpinium process
 │   ├── output/workspace state
 │   └── window lifecycle
 ├── Layout engine
-│   ├── tiling policy
-│   └── floating policy
+│   ├── master-stack tiling policy (initial)
+│   └── floating move/resize policy (initial)
 ├── Visual system
 │   ├── decorations and borders
 │   ├── animations and transitions
