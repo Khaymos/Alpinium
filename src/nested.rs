@@ -907,7 +907,6 @@ use smithay::{
         keyboard::{FilterResult, keysyms},
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
-    reexports::wayland_server::protocol::wl_surface::WlSurface,
     utils::SERIAL_COUNTER,
 };
 
@@ -1119,7 +1118,8 @@ pub struct AlpiniumState {
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
     pub shm_state: ShmState,
-    pub output_manager_state: OutputManagerState,
+    // Keep the xdg-output global registered for the compositor's lifetime.
+    _output_manager_state: OutputManagerState,
     pub seat_state: SeatState<AlpiniumState>,
     pub data_device_state: DataDeviceState,
     pub popups: PopupManager,
@@ -1370,7 +1370,7 @@ impl AlpiniumState {
             compositor_state,
             xdg_shell_state,
             shm_state,
-            output_manager_state,
+            _output_manager_state: output_manager_state,
             seat_state,
             data_device_state,
             popups,
