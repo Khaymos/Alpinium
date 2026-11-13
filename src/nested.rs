@@ -901,17 +901,20 @@ mod input {
 use smithay::{
     backend::input::{
         AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-        KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
     },
     input::{
-        keyboard::FilterResult,
+        keyboard::{FilterResult, keysyms},
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
     reexports::wayland_server::protocol::wl_surface::WlSurface,
     utils::SERIAL_COUNTER,
 };
 
-use crate::nested::AlpiniumState;
+use crate::{
+    keybindings::{self, Action, ShortcutKey},
+    nested::AlpiniumState,
+};
 
 impl AlpiniumState {
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
@@ -919,14 +922,51 @@ impl AlpiniumState {
             InputEvent::Keyboard { event, .. } => {
                 let serial = SERIAL_COUNTER.next_serial();
                 let time = Event::time_msec(&event);
+                let keycode = event.key_code();
+                let key_state = event.state();
 
                 self.seat.get_keyboard().unwrap().input::<(), _>(
                     self,
-                    event.key_code(),
-                    event.state(),
+                    keycode,
+                    key_state,
                     serial,
                     time,
-                    |_, _, _| FilterResult::Forward,
+                    |state, modifiers, key| {
+                        let keysym = key.modified_sym();
+                        let shortcut_key = if keysym == keysyms::KEY_Super_L
+                            || keysym == keysyms::KEY_Super_R
+                        {
+                            ShortcutKey::Logo
+                        } else if keysym == keysyms::KEY_Tab {
+                            ShortcutKey::Tab
+                        } else if keysym == keysyms::KEY_q || keysym == keysyms::KEY_Q {
+                            ShortcutKey::Q
+                        } else {
+                            ShortcutKey::Other
+                        };
+
+                        match keybindings::resolve(
+                            modifiers.logo,
+                            modifiers.shift,
+                            key_state == KeyState::Pressed,
+                            shortcut_key,
+                        ) {
+                            Some(Action::Consume) => FilterResult::Intercept(()),
+                            Some(Action::FocusNext) => {
+                                state.focus_relative(false);
+                                FilterResult::Intercept(())
+                            }
+                            Some(Action::FocusPrevious) => {
+                                state.focus_relative(true);
+                                FilterResult::Intercept(())
+                            }
+                            Some(Action::CloseFocused) => {
+                                state.close_focused_window();
+                                FilterResult::Intercept(())
+                            }
+                            None => FilterResult::Forward,
+                        }
+                    },
                 );
             }
             InputEvent::PointerMotion { .. } => {}
@@ -1082,6 +1122,8 @@ pub struct AlpiniumState {
     pub space: Space<Window>,
     /// Stable creation order used to choose the master independently from focus order.
     window_order: Vec<Window>,
+    /// Last focused window, retained while the host window is unfocused.
+    focused_window: Option<Window>,
     pub loop_signal: LoopSignal,
 
     // Smithay State
@@ -1097,8 +1139,21 @@ pub struct AlpiniumState {
 }
 
 impl AlpiniumState {
-    /// Focus a mapped toplevel on the compositor's keyboard.
+    /// Return mapped windows in stable creation order.
+    fn ordered_windows(&self) -> Vec<Window> {
+        let mapped: Vec<Window> = self.space.elements().cloned().collect();
+        self.window_order
+            .iter()
+            .filter(|window| mapped.contains(window))
+            .cloned()
+            .collect()
+    }
+
+    /// Focus and raise a mapped toplevel without changing its master/stack order.
     fn focus_window(&mut self, window: &Window) {
+        self.space.raise_element(window, true);
+        self.focused_window = Some(window.clone());
+
         if let Some(toplevel) = window.toplevel() {
             let surface = toplevel.wl_surface().clone();
             let keyboard = self.seat.get_keyboard().unwrap();
@@ -1107,15 +1162,67 @@ impl AlpiniumState {
         }
     }
 
+    /// Focus the next or previous mapped window in creation order.
+    pub fn focus_relative(&mut self, backwards: bool) {
+        let windows = self.ordered_windows();
+        if windows.is_empty() {
+            return;
+        }
+
+        let current_index = self
+            .focused_window
+            .as_ref()
+            .and_then(|focused| windows.iter().position(|window| window == focused));
+
+        let next_index = match current_index {
+            Some(index) if backwards => (index + windows.len() - 1) % windows.len(),
+            Some(index) => (index + 1) % windows.len(),
+            None => 0,
+        };
+
+        self.focus_window(&windows[next_index]);
+    }
+
+    /// Ask the focused Wayland client to close, then move focus to another window.
+    ///
+    /// Wayland clients decide whether and when to honor the close request; this
+    /// does not forcibly terminate the application.
+    pub fn close_focused_window(&mut self) {
+        let windows = self.ordered_windows();
+        let Some(index) = self
+            .focused_window
+            .as_ref()
+            .and_then(|focused| windows.iter().position(|window| window == focused))
+        else {
+            return;
+        };
+
+        if let Some(toplevel) = windows[index].toplevel() {
+            toplevel.send_close();
+        }
+
+        if windows.len() > 1 {
+            self.focus_window(&windows[(index + 1) % windows.len()]);
+        } else {
+            self.focused_window = None;
+            let keyboard = self.seat.get_keyboard().unwrap();
+            keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial());
+        }
+    }
+
     /// Keep keyboard focus in sync with the host Winit window.
     pub fn handle_host_focus(&mut self, focused: bool) {
-        let surface = if focused {
-            self.space.elements().last().and_then(|window| {
-                window.toplevel().map(|toplevel| toplevel.wl_surface().clone())
-            })
+        let window = if focused {
+            self.focused_window
+                .as_ref()
+                .filter(|window| self.space.elements().any(|mapped| mapped == *window))
+                .cloned()
         } else {
             None
         };
+        let surface = window.and_then(|window| {
+            window.toplevel().map(|toplevel| toplevel.wl_surface().clone())
+        });
 
         let keyboard = self.seat.get_keyboard().unwrap();
         keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
@@ -1134,6 +1241,17 @@ impl AlpiniumState {
     /// This is safe to call after refresh: locations and sizes are only
     /// updated when their target geometry changes.
     pub fn apply_layout(&mut self) {
+        let mapped_windows: Vec<Window> = self.space.elements().cloned().collect();
+        self.window_order
+            .retain(|window| mapped_windows.contains(window));
+        if self
+            .focused_window
+            .as_ref()
+            .is_some_and(|focused| !mapped_windows.contains(focused))
+        {
+            self.focused_window = None;
+        }
+
         if self.config.mode != LayoutMode::Tiling {
             return;
         }
@@ -1144,10 +1262,6 @@ impl AlpiniumState {
         let Some(output_geometry) = self.space.output_geometry(&output) else {
             return;
         };
-
-        let mapped_windows: Vec<Window> = self.space.elements().cloned().collect();
-        self.window_order
-            .retain(|window| mapped_windows.contains(window));
 
         if self.window_order.is_empty() {
             return;
@@ -1243,6 +1357,7 @@ impl AlpiniumState {
 
             space,
             window_order: Vec::new(),
+            focused_window: None,
             loop_signal,
             socket_name,
 
