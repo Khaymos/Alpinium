@@ -92,7 +92,14 @@ The nested backend currently supports two global modes:
 - **Tiling:** the first mapped window is the master on the left; later windows share a vertical stack on the right. Inner and outer gaps come from the config. Client move/resize requests are ignored while tiling owns the geometry.
 - **Floating:** windows can be moved and resized freely using the existing pointer grabs.
 
-The first layout policy is intentionally simple. Workspaces, configurable master ratios, keyboard-driven window management, decorations, and effects are still planned.
+The initial keyboard shortcuts are:
+- **Super+Tab:** focus the next window.
+- **Super+Shift+Tab:** focus the previous window.
+- **Super+Q:** send a close request to the focused application.
+
+These are built-in defaults for now, not configurable bindings. Super is the Logo/Windows key. A Wayland client may choose how to handle a close request; Alpinium does not forcibly terminate it.
+
+The first layout policy is intentionally simple. Workspaces, configurable master ratios, customizable keybindings, decorations, and effects are still planned.
 
 ## Planned technology
 
@@ -109,7 +116,8 @@ The nested development backend is based on the structure of Smithay's Smallvil e
 - [ ] Build and verify the nested backend on developer machines and CI.
 - [ ] Display and manage Wayland client surfaces reliably.
 - [x] Implement the first master-stack tiling and floating layout policies.
-- [ ] Add keybindings, workspaces, and output management.
+- [x] Add initial focus-cycle and close-request keyboard shortcuts.
+- [ ] Add configurable keybindings, workspaces, and output management.
 - [ ] Add decorations, animations, shadows, and rounded corners.
 - [ ] Integrate Alpinium into KhaymOS profiles and installer.
 
