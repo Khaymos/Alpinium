@@ -937,7 +937,9 @@ impl AlpiniumState {
                             || keysym == keysyms::KEY_Super_R.into()
                         {
                             ShortcutKey::Logo
-                        } else if keysym == keysyms::KEY_Tab.into() {
+                        } else if keysym == keysyms::KEY_Tab.into()
+                            || keysym == keysyms::KEY_ISO_Left_Tab.into()
+                        {
                             ShortcutKey::Tab
                         } else if keysym == keysyms::KEY_q.into() || keysym == keysyms::KEY_Q.into() {
                             ShortcutKey::Q
@@ -996,7 +998,6 @@ impl AlpiniumState {
             }
             InputEvent::PointerButton { event, .. } => {
                 let pointer = self.seat.get_pointer().unwrap();
-                let keyboard = self.seat.get_keyboard().unwrap();
 
                 let serial = SERIAL_COUNTER.next_serial();
 
@@ -1010,21 +1011,9 @@ impl AlpiniumState {
                         .element_under(pointer.current_location())
                         .map(|(w, l)| (w.clone(), l))
                     {
-                        self.space.raise_element(&window, true);
-                        keyboard.set_focus(
-                            self,
-                            Some(window.toplevel().unwrap().wl_surface().clone()),
-                            serial,
-                        );
-                        self.space.elements().for_each(|window| {
-                            window.toplevel().unwrap().send_pending_configure();
-                        });
+                        self.focus_window(&window, serial);
                     } else {
-                        self.space.elements().for_each(|window| {
-                            window.set_activated(false);
-                            window.toplevel().unwrap().send_pending_configure();
-                        });
-                        keyboard.set_focus(self, Option::<WlSurface>::None, serial);
+                        self.clear_focus(serial);
                     }
                 };
 
@@ -1150,16 +1139,35 @@ impl AlpiniumState {
     }
 
     /// Focus and raise a mapped toplevel without changing its master/stack order.
-    fn focus_window(&mut self, window: &Window) {
+    pub fn focus_window(&mut self, window: &Window, serial: smithay::utils::Serial) {
         self.space.raise_element(window, true);
         self.focused_window = Some(window.clone());
 
         if let Some(toplevel) = window.toplevel() {
             let surface = toplevel.wl_surface().clone();
             let keyboard = self.seat.get_keyboard().unwrap();
-            keyboard.set_focus(self, Some(surface), SERIAL_COUNTER.next_serial());
-            toplevel.send_pending_configure();
+            keyboard.set_focus(self, Some(surface), serial);
         }
+
+        self.space.elements().for_each(|window| {
+            if let Some(toplevel) = window.toplevel() {
+                toplevel.send_pending_configure();
+            }
+        });
+    }
+
+    /// Clear keyboard focus and deactivate all mapped toplevels.
+    pub fn clear_focus(&mut self, serial: smithay::utils::Serial) {
+        self.focused_window = None;
+        self.space.elements().for_each(|window| {
+            window.set_activated(false);
+            if let Some(toplevel) = window.toplevel() {
+                toplevel.send_pending_configure();
+            }
+        });
+
+        let keyboard = self.seat.get_keyboard().unwrap();
+        keyboard.set_focus(self, None, serial);
     }
 
     /// Focus the next or previous mapped window in creation order.
@@ -1180,7 +1188,7 @@ impl AlpiniumState {
             None => 0,
         };
 
-        self.focus_window(&windows[next_index]);
+        self.focus_window(&windows[next_index], SERIAL_COUNTER.next_serial());
     }
 
     /// Ask the focused Wayland client to close, then move focus to another window.
@@ -1202,11 +1210,9 @@ impl AlpiniumState {
         }
 
         if windows.len() > 1 {
-            self.focus_window(&windows[(index + 1) % windows.len()]);
+            self.focus_window(&windows[(index + 1) % windows.len()], SERIAL_COUNTER.next_serial());
         } else {
-            self.focused_window = None;
-            let keyboard = self.seat.get_keyboard().unwrap();
-            keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial());
+            self.clear_focus(SERIAL_COUNTER.next_serial());
         }
     }
 
@@ -1232,7 +1238,7 @@ impl AlpiniumState {
     pub fn map_window(&mut self, window: Window) {
         self.window_order.push(window.clone());
         self.space.map_element(window.clone(), (0, 0), false);
-        self.focus_window(&window);
+        self.focus_window(&window, SERIAL_COUNTER.next_serial());
         self.apply_layout();
     }
 
