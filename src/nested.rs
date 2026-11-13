@@ -623,9 +623,12 @@ use smithay::{
     },
 };
 
-use crate::nested::{
-    AlpiniumState,
-    grabs::{MoveSurfaceGrab, ResizeSurfaceGrab},
+use crate::{
+    config::LayoutMode,
+    nested::{
+        AlpiniumState,
+        grabs::{MoveSurfaceGrab, ResizeSurfaceGrab},
+    },
 };
 
 impl XdgShellHandler for AlpiniumState {
@@ -635,7 +638,7 @@ impl XdgShellHandler for AlpiniumState {
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let window = Window::new_wayland_window(surface);
-        self.space.map_element(window, (0, 0), false);
+        self.map_window(window);
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
@@ -654,6 +657,10 @@ impl XdgShellHandler for AlpiniumState {
     }
 
     fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, serial: Serial) {
+        if self.config.mode == LayoutMode::Tiling {
+            return;
+        }
+
         let seat = Seat::from_resource(&seat).unwrap();
 
         let wl_surface = surface.wl_surface();
@@ -686,6 +693,10 @@ impl XdgShellHandler for AlpiniumState {
         serial: Serial,
         edges: xdg_toplevel::ResizeEdge,
     ) {
+        if self.config.mode == LayoutMode::Tiling {
+            return;
+        }
+
         let seat = Seat::from_resource(&seat).unwrap();
 
         let wl_surface = surface.wl_surface();
@@ -1035,7 +1046,10 @@ impl AlpiniumState {
 }
 mod state {
 use std::{ffi::OsString, sync::Arc};
-use crate::config::Config;
+use crate::{
+    config::{Config, LayoutMode},
+    layout::{LayoutRect, master_stack_layout},
+};
 
 use smithay::{
     desktop::{PopupManager, Space, Window, WindowSurfaceType},
@@ -1066,6 +1080,8 @@ pub struct AlpiniumState {
     pub display_handle: DisplayHandle,
 
     pub space: Space<Window>,
+    /// Stable creation order used to choose the master independently from focus order.
+    window_order: Vec<Window>,
     pub loop_signal: LoopSignal,
 
     // Smithay State
@@ -1081,6 +1097,75 @@ pub struct AlpiniumState {
 }
 
 impl AlpiniumState {
+    /// Add a newly-created toplevel and apply the active layout policy.
+    pub fn map_window(&mut self, window: Window) {
+        self.window_order.push(window.clone());
+        self.space.map_element(window, (0, 0), false);
+        self.apply_layout();
+    }
+
+    /// Reconcile mapped windows with the configured global layout mode.
+    ///
+    /// This is safe to call after refresh: locations and sizes are only
+    /// updated when their target geometry changes.
+    pub fn apply_layout(&mut self) {
+        if self.config.mode != LayoutMode::Tiling {
+            return;
+        }
+
+        let Some(output) = self.space.outputs().next().cloned() else {
+            return;
+        };
+        let Some(output_geometry) = self.space.output_geometry(&output) else {
+            return;
+        };
+
+        let mapped_windows: Vec<Window> = self.space.elements().cloned().collect();
+        self.window_order
+            .retain(|window| mapped_windows.contains(window));
+
+        if self.window_order.is_empty() {
+            return;
+        }
+
+        let area = LayoutRect::new(
+            output_geometry.loc.x,
+            output_geometry.loc.y,
+            output_geometry.size.w,
+            output_geometry.size.h,
+        );
+        let placements = master_stack_layout(
+            area,
+            self.window_order.len(),
+            self.config.outer_gap,
+            self.config.inner_gap,
+        );
+
+        let windows = self.window_order.clone();
+        for (window, placement) in windows.into_iter().zip(placements) {
+            let location = Point::from((placement.x, placement.y));
+            if self.space.element_location(&window) != Some(location) {
+                self.space.map_element(window.clone(), location, false);
+            }
+
+            let Some(toplevel) = window.toplevel() else {
+                continue;
+            };
+            let target_size = (placement.width, placement.height).into();
+            let size_changed = toplevel.with_pending_state(|state| {
+                if state.size != Some(target_size) {
+                    state.size = Some(target_size);
+                    true
+                } else {
+                    false
+                }
+            });
+            if size_changed {
+                toplevel.send_pending_configure();
+            }
+        }
+    }
+
     pub fn new(event_loop: &mut EventLoop<Self>, display: Display<Self>, config: Config) -> Self {
         let start_time = std::time::Instant::now();
 
@@ -1132,6 +1217,7 @@ impl AlpiniumState {
             display_handle: dh,
 
             space,
+            window_order: Vec::new(),
             loop_signal,
             socket_name,
 
@@ -1267,6 +1353,9 @@ pub fn init_winit(
             }
             WinitEvent::Input(event) => state.process_input_event(event),
             WinitEvent::Redraw => {
+                state.space.refresh();
+                state.apply_layout();
+
                 let size = backend.window_size();
                 let damage = Rectangle::from_size(size);
 
@@ -1301,7 +1390,6 @@ pub fn init_winit(
                     )
                 });
 
-                state.space.refresh();
                 state.popups.cleanup();
                 let _ = state.display_handle.flush_clients();
 
@@ -1348,7 +1436,7 @@ pub fn run(
     println!("Configuration: {source}");
     println!("Configured layout mode: {}", state.config.mode);
     println!("Wayland socket: {}", state.socket_name.to_string_lossy());
-    println!("Note: tiling/floating layout policy is not implemented yet.");
+    println!("Window layout: {}", state.config.mode);
 
     if let Some(program) = command {
         println!("Launching nested client: {}", program.to_string_lossy());
