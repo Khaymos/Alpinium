@@ -933,13 +933,13 @@ impl AlpiniumState {
                     time,
                     |state, modifiers, key| {
                         let keysym = key.modified_sym();
-                        let shortcut_key = if keysym == keysyms::KEY_Super_L
-                            || keysym == keysyms::KEY_Super_R
+                        let shortcut_key = if keysym == keysyms::KEY_Super_L.into()
+                            || keysym == keysyms::KEY_Super_R.into()
                         {
                             ShortcutKey::Logo
-                        } else if keysym == keysyms::KEY_Tab {
+                        } else if keysym == keysyms::KEY_Tab.into() {
                             ShortcutKey::Tab
-                        } else if keysym == keysyms::KEY_q || keysym == keysyms::KEY_Q {
+                        } else if keysym == keysyms::KEY_q.into() || keysym == keysyms::KEY_Q.into() {
                             ShortcutKey::Q
                         } else {
                             ShortcutKey::Other
