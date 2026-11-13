@@ -106,7 +106,7 @@ fn vertical_stack(
     let mut next_y = y;
 
     for index in 0..count_i32 {
-        let extra_pixel = i32::from(index < remainder);
+        let extra_pixel = if index < remainder { 1 } else { 0 };
         let tile_height = base_height + extra_pixel;
         placements.push(LayoutRect::new(x, next_y, width, tile_height));
         next_y = next_y.saturating_add(tile_height).saturating_add(gap);
