@@ -22,6 +22,8 @@ The nested backend now includes a first working master-stack layout policy. The 
 
 The layout calculation is isolated in `src/layout.rs` and has unit tests independent of Smithay. The nested backend reapplies layout after window lifecycle changes and output redraw/resize events. This remains an early milestone and has not been verified on every target system.
 
+The initial keyboard shortcut layer is isolated in `src/keybindings.rs`. Smithay's keyboard filter intercepts Super+Tab and Super+Shift+Tab for focus cycling, and Super+Q to send an XDG toplevel close request. Other key events continue to the focused client. The last-focused window is retained while the host Winit window is unfocused.
+
 ## Planned layers
 
 ~~~text
