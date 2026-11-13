@@ -16,7 +16,7 @@ The first existing file is loaded as a complete config. Configs are not merged i
 
 | Directive | Values | Default | Meaning |
 | --- | --- | --- | --- |
-| mode | tiling, floating | tiling | Selects the global window-management mode for the whole session. |
+| mode | tiling, floating | tiling | Selects the global window-management mode. Tiling uses a left master and right-side vertical stack; floating enables free pointer move/resize. |
 | animations | enabled, disabled | enabled | Enables or disables compositor animations. |
 | animation_duration | milliseconds, e.g. 200ms | 200ms | Base animation duration. |
 | gaps inner | non-negative integer | 5 | Inner window gap in pixels. |
@@ -51,6 +51,8 @@ shadows enabled
 ~~~
 
 The two modes are selected at configuration load time. They are implemented by the same Alpinium compositor binary and are not separate applications.
+
+In the initial tiling policy, the first mapped window is the master and later windows are stacked vertically in a second column. The configured inner and outer gaps are used in both placements. Tiling owns window geometry, so client-initiated move and resize requests are ignored. In floating mode, clients may request moves and resizes through the compositor's pointer grabs.
 
 ## Validation
 
