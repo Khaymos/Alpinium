@@ -1,3 +1,5 @@
+mod animation;
+mod render;
 mod config;
 mod layout;
 mod keybindings;
@@ -118,6 +120,15 @@ fn run() -> Result<(), String> {
             if config.animations { "enabled" } else { "disabled" }
         );
         println!("animation_duration {}ms", config.animation_duration_ms);
+        println!("animation_curve {}", config.animation_curve.as_str());
+        println!(
+            "window_move_animation {}",
+            if config.window_move_animation { "enabled" } else { "disabled" }
+        );
+        println!(
+            "window_resize_animation {}",
+            if config.window_resize_animation { "enabled" } else { "disabled" }
+        );
         println!("gaps inner {}", config.inner_gap);
         println!("gaps outer {}", config.outer_gap);
         println!("corner_radius {}", config.corner_radius);
