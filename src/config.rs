@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn parses_animation_curve_and_individual_geometry_toggles() {
         let config = Config::parse(
-            "animation_curve ease-in-out\\nwindow_move_animation disabled\\nwindow_resize_animation enabled\\n",
+            "animation_curve ease-in-out\nwindow_move_animation disabled\nwindow_resize_animation enabled\n",
         ).unwrap();
         assert_eq!(config.animation_curve, AnimationCurve::EaseInOut);
         assert!(!config.window_move_animation);
