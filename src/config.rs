@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::keybindings::{default_bindings, Binding};
+use crate::animation::AnimationCurve;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LayoutMode {
@@ -25,6 +26,9 @@ pub struct Config {
     pub mode: LayoutMode,
     pub animations: bool,
     pub animation_duration_ms: u32,
+    pub animation_curve: AnimationCurve,
+    pub window_move_animation: bool,
+    pub window_resize_animation: bool,
     pub inner_gap: u32,
     pub outer_gap: u32,
     pub corner_radius: u32,
@@ -43,6 +47,9 @@ impl Default for Config {
             mode: LayoutMode::Tiling,
             animations: true,
             animation_duration_ms: 200,
+            animation_curve: AnimationCurve::EaseOut,
+            window_move_animation: true,
+            window_resize_animation: true,
             inner_gap: 5,
             outer_gap: 5,
             corner_radius: 8,
@@ -164,6 +171,30 @@ impl Config {
                         )
                     })?;
                     config.animation_duration_ms = parse_u32(duration, line_number, "animation duration")?;
+                }
+                ["animation_curve", value] => {
+                    config.animation_curve = AnimationCurve::parse(value).ok_or_else(|| {
+                        ConfigError::at_line(
+                            line_number,
+                            "animation_curve must be linear, ease-in, ease-out, or ease-in-out",
+                        )
+                    })?;
+                }
+                ["window_move_animation", value] => {
+                    config.window_move_animation = parse_enabled(value).ok_or_else(|| {
+                        ConfigError::at_line(
+                            line_number,
+                            "expected 'enabled' or 'disabled' for window_move_animation",
+                        )
+                    })?;
+                }
+                ["window_resize_animation", value] => {
+                    config.window_resize_animation = parse_enabled(value).ok_or_else(|| {
+                        ConfigError::at_line(
+                            line_number,
+                            "expected 'enabled' or 'disabled' for window_resize_animation",
+                        )
+                    })?;
                 }
                 ["gaps", "inner", value] => {
                     config.inner_gap = parse_u32(value, line_number, "inner gap")?;
@@ -375,6 +406,23 @@ mod tests {
         let error = Config::parse("animation_duration 200s").unwrap_err();
         assert_eq!(error.line, Some(1));
         assert!(error.message.contains("milliseconds"));
+    }
+
+    #[test]
+    fn parses_animation_curve_and_individual_geometry_toggles() {
+        let config = Config::parse(
+            "animation_curve ease-in-out\\nwindow_move_animation disabled\\nwindow_resize_animation enabled\\n",
+        ).unwrap();
+        assert_eq!(config.animation_curve, AnimationCurve::EaseInOut);
+        assert!(!config.window_move_animation);
+        assert!(config.window_resize_animation);
+    }
+
+    #[test]
+    fn rejects_unknown_animation_curve() {
+        let error = Config::parse("animation_curve bounce").unwrap_err();
+        assert_eq!(error.line, Some(1));
+        assert!(error.message.contains("ease-in-out"));
     }
 
     #[test]
