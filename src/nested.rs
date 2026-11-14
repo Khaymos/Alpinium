@@ -1137,8 +1137,9 @@ impl AlpiniumState {
 
 }
 mod state {
-use std::{ffi::OsString, sync::Arc};
+use std::{ffi::OsString, sync::Arc, time::{Duration, Instant}};
 use crate::{
+    animation::{AnimationRect, GeometryAnimation},
     config::{Config, LayoutMode},
     layout::{LayoutRect, master_stack_layout},
 };
@@ -1165,6 +1166,12 @@ use smithay::{
     },
 };
 
+struct WindowAnimation {
+    window: Window,
+    geometry: GeometryAnimation,
+    configure_sent: bool,
+}
+
 pub struct AlpiniumState {
     pub config: Config,
     pub start_time: std::time::Instant,
@@ -1182,6 +1189,11 @@ pub struct AlpiniumState {
     focused_window: Option<Window>,
     /// Whether the nested Winit host currently owns keyboard focus.
     host_focused: bool,
+    /// Active move/resize transitions, including completed size transitions
+    /// waiting for the client to commit the final configure.
+    window_animations: Vec<WindowAnimation>,
+    /// Windows that should appear immediately rather than animate on first map.
+    newly_mapped_windows: Vec<Window>,
     pub loop_signal: LoopSignal,
 
     // Smithay State
@@ -1235,6 +1247,8 @@ impl AlpiniumState {
 
     /// Remove a temporarily-unmapped toplevel from the visible space.
     fn unmap_window(&mut self, window: &Window) {
+        self.window_animations.retain(|animation| animation.window != *window);
+        self.newly_mapped_windows.retain(|mapped| mapped != window);
         if let Some(location) = self.space.element_location(window) {
             if let Some((_, saved_location)) = self
                 .unmapped_window_locations
@@ -1283,6 +1297,7 @@ impl AlpiniumState {
                         .unwrap_or_else(|| Point::from((0, 0)));
                     self.unmapped_window_locations
                         .retain(|(saved, _)| saved != window);
+                    self.newly_mapped_windows.push(window.clone());
                     self.space.map_element(window.clone(), location, false);
                     self.apply_layout();
 
@@ -1316,6 +1331,8 @@ impl AlpiniumState {
             return;
         };
 
+        self.window_animations.retain(|animation| animation.window != window);
+        self.newly_mapped_windows.retain(|mapped| mapped != &window);
         self.window_order.retain(|tracked| tracked != &window);
         self.buffer_attached_windows
             .retain(|attached| attached != &window);
@@ -1447,33 +1464,31 @@ impl AlpiniumState {
     /// Add a newly-created toplevel, focus it, and apply the active layout policy.
     pub fn map_window(&mut self, window: Window) {
         self.window_order.push(window.clone());
+        self.newly_mapped_windows.push(window.clone());
         self.space.map_element(window.clone(), (0, 0), false);
         self.focus_window(&window, SERIAL_COUNTER.next_serial());
         self.apply_layout();
     }
 
-    /// Reconcile currently mapped windows with the configured global layout mode.
-    ///
-    /// The creation-order list retains temporarily-unmapped toplevels so they
-    /// can be mapped again without losing their identity or floating position.
+    /// Reconcile mapped windows with the configured layout, starting or retargeting
+    /// geometry transitions when the layout changes.
     pub fn apply_layout(&mut self) {
         let windows = self.ordered_windows();
-        if self
-            .focused_window
-            .as_ref()
-            .is_some_and(|focused| !windows.contains(focused))
-        {
+        if self.focused_window.as_ref().is_some_and(|focused| !windows.contains(focused)) {
             self.focused_window = None;
         }
 
         if self.config.mode != LayoutMode::Tiling || windows.is_empty() {
+            self.newly_mapped_windows.clear();
             return;
         }
 
         let Some(output) = self.space.outputs().next().cloned() else {
+            self.newly_mapped_windows.clear();
             return;
         };
         let Some(output_geometry) = self.space.output_geometry(&output) else {
+            self.newly_mapped_windows.clear();
             return;
         };
 
@@ -1489,29 +1504,193 @@ impl AlpiniumState {
             self.config.outer_gap,
             self.config.inner_gap,
         );
+        let now = Instant::now();
 
         for (window, placement) in windows.into_iter().zip(placements) {
+            let target = AnimationRect::new(
+                f64::from(placement.x),
+                f64::from(placement.y),
+                f64::from(placement.width),
+                f64::from(placement.height),
+            );
+            let is_new_window = self.newly_mapped_windows.contains(&window);
+            let animation_index = self
+                .window_animations
+                .iter()
+                .position(|animation| animation.window == window);
+
+            if let Some(index) = animation_index {
+                if self.window_animations[index].geometry.to.approximately_eq(target) {
+                    continue;
+                }
+            }
+
+            let current = if let Some(index) = animation_index {
+                self.window_animations[index].geometry.sample(now)
+            } else {
+                let location = self.space.element_location(&window).unwrap_or_else(|| {
+                    Point::from((placement.x, placement.y))
+                });
+                let size = window.geometry().size;
+                AnimationRect::new(
+                    f64::from(location.x),
+                    f64::from(location.y),
+                    f64::from(size.w),
+                    f64::from(size.h),
+                )
+            };
+
+            let mut from = current;
+            if !self.config.window_move_animation {
+                from.x = target.x;
+                from.y = target.y;
+            }
+            if !self.config.window_resize_animation {
+                from.width = target.width;
+                from.height = target.height;
+            }
+
+            let should_animate = self.config.animations
+                && !is_new_window
+                && self.config.animation_duration_ms > 0
+                && !from.approximately_eq(target);
+
+            if should_animate {
+                let geometry = GeometryAnimation::new(
+                    from,
+                    target,
+                    now,
+                    Duration::from_millis(u64::from(self.config.animation_duration_ms)),
+                    self.config.animation_curve,
+                );
+                let animation = WindowAnimation {
+                    window: window.clone(),
+                    geometry,
+                    configure_sent: false,
+                };
+
+                if let Some(index) = animation_index {
+                    self.window_animations[index] = animation;
+                } else {
+                    self.window_animations.push(animation);
+                }
+
+                let location = Point::from(from.rounded_location());
+                if self.space.element_location(&window) != Some(location) {
+                    self.space.map_element(window.clone(), location, false);
+                }
+                continue;
+            }
+
+            if let Some(index) = animation_index {
+                self.window_animations.remove(index);
+            }
+
             let location = Point::from((placement.x, placement.y));
             if self.space.element_location(&window) != Some(location) {
                 self.space.map_element(window.clone(), location, false);
             }
 
-            let Some(toplevel) = window.toplevel() else {
-                continue;
-            };
-            let target_size = (placement.width, placement.height).into();
-            let size_changed = toplevel.with_pending_state(|state| {
-                if state.size != Some(target_size) {
-                    state.size = Some(target_size);
-                    true
-                } else {
-                    false
+            if let Some(toplevel) = window.toplevel() {
+                let target_size = (placement.width, placement.height).into();
+                let size_changed = toplevel.with_pending_state(|state| {
+                    if state.size != Some(target_size) {
+                        state.size = Some(target_size);
+                        true
+                    } else {
+                        false
+                    }
+                });
+                if size_changed {
+                    toplevel.send_pending_configure();
                 }
-            });
-            if size_changed {
-                toplevel.send_pending_configure();
             }
         }
+
+        self.newly_mapped_windows.clear();
+    }
+
+    /// Advance geometry transitions and send each final client resize configure
+    /// only once, after its visual interpolation has completed.
+    pub fn advance_animations(&mut self, now: Instant) {
+        let snapshots: Vec<(Window, AnimationRect, bool, bool)> = self
+            .window_animations
+            .iter()
+            .map(|animation| (
+                animation.window.clone(),
+                animation.geometry.sample(now),
+                animation.geometry.is_finished(now),
+                animation.configure_sent,
+            ))
+            .collect();
+
+        let mut remove = Vec::new();
+        for (window, sample, finished, configure_sent) in snapshots {
+            if !self.space.elements().any(|mapped| mapped == &window) {
+                remove.push(window);
+                continue;
+            }
+
+            let location = Point::from(sample.rounded_location());
+            if self.space.element_location(&window) != Some(location) {
+                self.space.map_element(window.clone(), location, false);
+            }
+
+            if finished && !configure_sent {
+                let target_size = {
+                    let animation = self.window_animations.iter()
+                        .find(|animation| animation.window == window)
+                        .expect("active window animation must still exist");
+                    (
+                        animation.geometry.to.width.round() as i32,
+                        animation.geometry.to.height.round() as i32,
+                    ).into()
+                };
+
+                if let Some(toplevel) = window.toplevel() {
+                    let size_changed = toplevel.with_pending_state(|state| {
+                        if state.size != Some(target_size) {
+                            state.size = Some(target_size);
+                            true
+                        } else {
+                            false
+                        }
+                    });
+                    if size_changed {
+                        toplevel.send_pending_configure();
+                    }
+                }
+
+                if let Some(animation) = self.window_animations.iter_mut()
+                    .find(|animation| animation.window == window)
+                {
+                    animation.configure_sent = true;
+                }
+            }
+
+            if finished {
+                if let Some(animation) = self.window_animations.iter()
+                    .find(|animation| animation.window == window)
+                {
+                    let actual_size = window.geometry().size;
+                    let target_width = animation.geometry.to.width.round() as i32;
+                    let target_height = animation.geometry.to.height.round() as i32;
+                    if actual_size.w == target_width && actual_size.h == target_height {
+                        remove.push(window);
+                    }
+                }
+            }
+        }
+
+        self.window_animations.retain(|animation| !remove.contains(&animation.window));
+    }
+
+    /// Return the current render-time geometry for a transitioning window.
+    pub fn animation_geometry(&self, window: &Window, now: Instant) -> Option<AnimationRect> {
+        self.window_animations
+            .iter()
+            .find(|animation| animation.window == *window)
+            .map(|animation| animation.geometry.sample(now))
     }
 
     pub fn new(event_loop: &mut EventLoop<Self>, display: Display<Self>, config: Config) -> Self {
@@ -1570,6 +1749,8 @@ impl AlpiniumState {
             unmapped_window_locations: Vec::new(),
             focused_window: None,
             host_focused: true,
+            window_animations: Vec::new(),
+            newly_mapped_windows: Vec::new(),
             loop_signal,
             socket_name,
 
@@ -1650,9 +1831,7 @@ use std::time::Duration;
 
 use smithay::{
     backend::{
-        renderer::{
-            damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement, gles::GlesRenderer,
-        },
+        renderer::{damage::OutputDamageTracker, gles::GlesRenderer},
         winit::{self, WinitEvent},
     },
     output::{Mode, Output, PhysicalProperties, Subpixel},
@@ -1708,26 +1887,19 @@ pub fn init_winit(
             WinitEvent::Redraw => {
                 state.space.refresh();
                 state.apply_layout();
+                state.advance_animations(std::time::Instant::now());
 
                 let size = backend.window_size();
                 let damage = Rectangle::from_size(size);
 
                 {
                     let (renderer, mut framebuffer) = backend.bind().unwrap();
-                    smithay::desktop::space::render_output::<
-                        _,
-                        WaylandSurfaceRenderElement<GlesRenderer>,
-                        _,
-                        _,
-                    >(
-                        &output,
+                    let elements = crate::render::space_render_elements(state, renderer, &output);
+                    damage_tracker.render_output(
                         renderer,
                         &mut framebuffer,
-                        1.0,
                         0,
-                        [&state.space],
-                        &[],
-                        &mut damage_tracker,
+                        &elements,
                         [0.1, 0.1, 0.1, 1.0],
                     )
                     .unwrap();
