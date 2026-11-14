@@ -1284,6 +1284,7 @@ impl AlpiniumState {
             }
             crate::window_lifecycle::BufferTransition::Attached => {
                 self.buffer_attached_windows.push(window.clone());
+                self.newly_mapped_windows.push(window.clone());
 
                 let already_mapped = self.space.elements().any(|mapped| mapped == window);
                 if !already_mapped {
@@ -1295,7 +1296,6 @@ impl AlpiniumState {
                         .unwrap_or_else(|| Point::from((0, 0)));
                     self.unmapped_window_locations
                         .retain(|(saved, _)| saved != window);
-                    self.newly_mapped_windows.push(window.clone());
                     self.space.map_element(window.clone(), location, false);
                     self.apply_layout();
 
@@ -1511,7 +1511,8 @@ impl AlpiniumState {
                 f64::from(placement.width),
                 f64::from(placement.height),
             );
-            let is_new_window = self.newly_mapped_windows.contains(&window);
+            let is_new_window = self.newly_mapped_windows.contains(&window)
+                || !self.buffer_attached_windows.contains(&window);
             let animation_index = self
                 .window_animations
                 .iter()
