@@ -37,7 +37,10 @@ The default `$mod` is `Mod4` (Super/Windows), and `$terminal` defaults to `alacr
 | `bindsym combination action` | modifier/key combination and action | see defaults below | Adds a keyboard binding. The first explicit `bindsym` replaces the built-in binding set. |
 | `mode` | `tiling`, `floating` | tiling | Selects global window management. |
 | `animations` | `enabled`, `disabled` | enabled | Enables or disables compositor animations. |
-| `animation_duration` | milliseconds, e.g. `200ms` | 200ms | Base animation duration. |
+| `animation_duration` | milliseconds, e.g. `200ms` | 200ms | Duration of each geometry transition. |
+| `animation_curve` | `linear`, `ease-in`, `ease-out`, `ease-in-out` | `ease-out` | Easing curve used for movement and resizing. |
+| `window_move_animation` | `enabled`, `disabled` | enabled | Animates layout-driven window movement. |
+| `window_resize_animation` | `enabled`, `disabled` | enabled | Animates layout-driven window resizing by scaling the rendered surface until the final client size is configured. |
 | `gaps inner` | non-negative integer | 5 | Inner window gap in pixels. |
 | `gaps outer` | non-negative integer | 5 | Outer screen gap in pixels. |
 | `corner_radius` | non-negative integer | 8 | Window corner radius in pixels. |
@@ -72,6 +75,9 @@ set $browser firefox
 mode tiling
 animations enabled
 animation_duration 200ms
+animation_curve ease-out
+window_move_animation enabled
+window_resize_animation enabled
 gaps inner 5
 gaps outer 5
 corner_radius 8
@@ -86,6 +92,22 @@ bindsym $mod+Shift+e exit
 ~~~
 
 The first explicit `bindsym` replaces the built-in binding set, so a custom config should include every binding it wants to retain. If no `bindsym` directives are present, Alpinium supplies the built-in bindings using the configured `$mod` value.
+
+## Geometry animations
+
+Alpinium interpolates the geometry of existing windows when the tiling layout changes. Movement updates the window's space location each frame. Resizing scales its rendered surface group during the transition and sends the final XDG configure after the visual transition finishes, rather than flooding clients with per-frame resize requests.
+
+The initial animation milestone covers layout-driven movement and resizing in both backends. Interactive floating drag and resize remain pointer-synchronous so windows do not lag behind the pointer. New windows are placed immediately; opening and closing effects are a later milestone.
+
+~~~conf
+animations enabled
+animation_duration 200ms
+animation_curve ease-out
+window_move_animation enabled
+window_resize_animation enabled
+~~~
+
+Use `animations disabled` to disable both geometry effects, or disable movement and resizing independently. Supported curves are `linear`, `ease-in`, `ease-out`, and `ease-in-out`.
 
 ## Validation
 
