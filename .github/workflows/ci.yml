@@ -23,6 +23,11 @@ jobs:
             libxkbcommon-dev \
             libxkbcommon-x11-dev \
             libegl1-mesa-dev \
+            libdrm-dev \
+            libgbm-dev \
+            libinput-dev \
+            libseat-dev \
+            libudev-dev \
             libx11-dev \
             libxrandr-dev \
             libxinerama-dev \
