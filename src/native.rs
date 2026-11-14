@@ -6,7 +6,9 @@
 
 use std::{
     error::Error,
+    os::unix::fs::MetadataExt,
     path::Path,
+    path::PathBuf,
 };
 
 use smithay::{
@@ -25,14 +27,13 @@ use smithay::{
     utils::DeviceFd,
 };
 
-fn open_drm_devices(
-    session: &mut LibSeatSession,
+fn drm_device_paths(
     seat_name: &str,
-) -> Result<Vec<(libc::dev_t, std::path::PathBuf)>, Box<dyn Error>> {
+) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     let udev = UdevBackend::new(seat_name)?;
     let devices = udev
         .device_list()
-        .map(|(device_id, path)| (device_id, path.to_path_buf()))
+        .map(|(_, path)| path.to_path_buf())
         .collect::<Vec<_>>();
 
     if devices.is_empty() {
@@ -50,10 +51,11 @@ pub fn probe() -> Result<(), Box<dyn Error>> {
     let seat_name = session.seat();
     println!("libseat session acquired on {seat_name}");
 
-    let devices = open_drm_devices(&mut session, &seat_name)?;
+    let devices = drm_device_paths(&seat_name)?;
     println!("Found {} DRM device(s):", devices.len());
 
-    for (device_id, path) in devices {
+    for path in devices {
+        let device_id = std::fs::metadata(&path)?.rdev();
         println!();
         println!("DRM device: {} (dev_t {device_id})", path.display());
 
@@ -122,14 +124,15 @@ pub fn renderer_probe() -> Result<(), Box<dyn Error>> {
     let seat_name = session.seat();
     println!("libseat session acquired on {seat_name}");
 
-    let devices = open_drm_devices(&mut session, &seat_name)?;
-    let (device_id, path) = devices
+    let devices = drm_device_paths(&seat_name)?;
+    let path = devices
         .first()
         .ok_or("udev did not find any DRM devices for this seat")?;
+    let device_id = std::fs::metadata(path)?.rdev();
     println!("Using DRM device: {} (dev_t {device_id})", path.display());
 
     let fd = session.open(
-        Path::new(path),
+        path.as_path(),
         OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK,
     )?;
     let drm_fd = DrmDeviceFd::new(DeviceFd::from(fd));
