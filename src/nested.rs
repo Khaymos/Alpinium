@@ -952,6 +952,8 @@ impl AlpiniumState {
                             ShortcutKey::Tab
                         } else if keysym == keysyms::KEY_q.into() || keysym == keysyms::KEY_Q.into() {
                             ShortcutKey::Q
+                        } else if keysym == keysyms::KEY_e.into() || keysym == keysyms::KEY_E.into() {
+                            ShortcutKey::E
                         } else {
                             ShortcutKey::Other
                         };
@@ -973,6 +975,10 @@ impl AlpiniumState {
                             }
                             Some(Action::CloseFocused) => {
                                 state.close_focused_window();
+                                FilterResult::Intercept(())
+                            }
+                            Some(Action::ExitCompositor) => {
+                                state.loop_signal.stop();
                                 FilterResult::Intercept(())
                             }
                             None => FilterResult::Forward,
