@@ -914,14 +914,14 @@ use smithay::{
         KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
     },
     input::{
-        keyboard::{FilterResult, keysyms},
+        keyboard::FilterResult,
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
     utils::SERIAL_COUNTER,
 };
 
 use crate::{
-    keybindings::{self, Action, ShortcutKey},
+    keybindings::BindingAction,
     nested::AlpiniumState,
 };
 
@@ -941,48 +941,53 @@ impl AlpiniumState {
                     serial,
                     time,
                     |state, modifiers, key| {
-                        let keysym = key.modified_sym();
-                        let shortcut_key = if keysym == keysyms::KEY_Super_L.into()
-                            || keysym == keysyms::KEY_Super_R.into()
-                        {
-                            ShortcutKey::Logo
-                        } else if keysym == keysyms::KEY_Tab.into()
-                            || keysym == keysyms::KEY_ISO_Left_Tab.into()
-                        {
-                            ShortcutKey::Tab
-                        } else if keysym == keysyms::KEY_q.into() || keysym == keysyms::KEY_Q.into() {
-                            ShortcutKey::Q
-                        } else if keysym == keysyms::KEY_e.into() || keysym == keysyms::KEY_E.into() {
-                            ShortcutKey::E
-                        } else {
-                            ShortcutKey::Other
+                        let raw_syms = key.raw_syms();
+                        let is_logo_key = raw_syms.iter().any(|symbol| {
+                            matches!(symbol.name(), Some("Super_L" | "Super_R"))
+                        });
+                        let action = raw_syms.iter().find_map(|symbol| {
+                            let key_name = symbol.name()?;
+                            state.config.bindings.iter().find(|binding| {
+                                binding.matches(
+                                    modifiers.ctrl,
+                                    modifiers.alt,
+                                    modifiers.shift,
+                                    modifiers.logo,
+                                    key_name,
+                                )
+                            }).map(|binding| binding.action.clone())
+                        });
+
+                        if is_logo_key {
+                            return FilterResult::Intercept(());
+                        }
+
+                        let Some(action) = action else {
+                            return FilterResult::Forward;
                         };
 
-                        match keybindings::resolve(
-                            modifiers.logo,
-                            modifiers.shift,
-                            key_state == KeyState::Pressed,
-                            shortcut_key,
-                        ) {
-                            Some(Action::Consume) => FilterResult::Intercept(()),
-                            Some(Action::FocusNext) => {
-                                state.focus_relative(false);
-                                FilterResult::Intercept(())
+                        if key_state == KeyState::Pressed {
+                            match action {
+                                BindingAction::Execute(command) => {
+                                    if let Err(error) = std::process::Command::new("sh")
+                                        .arg("-c")
+                                        .arg(&command)
+                                        .env("WAYLAND_DISPLAY", &state.socket_name)
+                                        .spawn()
+                                    {
+                                        eprintln!("alpinium: could not execute keybinding command '{command}': {error}");
+                                    }
+                                }
+                                BindingAction::FocusNext => state.focus_relative(false),
+                                BindingAction::FocusPrevious => state.focus_relative(true),
+                                BindingAction::CloseFocused => state.close_focused_window(),
+                                BindingAction::ExitCompositor => state.loop_signal.stop(),
                             }
-                            Some(Action::FocusPrevious) => {
-                                state.focus_relative(true);
-                                FilterResult::Intercept(())
-                            }
-                            Some(Action::CloseFocused) => {
-                                state.close_focused_window();
-                                FilterResult::Intercept(())
-                            }
-                            Some(Action::ExitCompositor) => {
-                                state.loop_signal.stop();
-                                FilterResult::Intercept(())
-                            }
-                            None => FilterResult::Forward,
                         }
+
+                        // Intercept both press and release so clients never receive an
+                        // unmatched release for a key whose press triggered a binding.
+                        FilterResult::Intercept(())
                     },
                 );
             }
