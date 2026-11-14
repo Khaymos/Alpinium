@@ -35,7 +35,7 @@ use smithay::{
         renderer::{
             element::surface::WaylandSurfaceRenderElement,
             gles::GlesRenderer,
-            Renderer,
+            ImportMemWl,
         },
         session::{Event as SessionEvent, Session, libseat::LibSeatSession},
         udev::UdevBackend,
@@ -233,7 +233,7 @@ pub fn run(
     // SAFETY: renderer and context remain on this event-loop thread.
     let mut renderer = unsafe { GlesRenderer::new(egl_context)? };
 
-    let render_formats = renderer.egl_context().dmabuf_render_formats().to_vec();
+    let render_formats = renderer.egl_context().dmabuf_render_formats().iter().copied().collect::<Vec<_>>();
     let allocator = GbmAllocator::new(
         gbm.clone(),
         GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT,
@@ -316,7 +316,7 @@ pub fn run(
 
     let mut libinput_context =
         Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(session.clone().into());
-    libinput_context.udev_assign_seat(&seat_name)?;
+    libinput_context.udev_assign_seat(&seat_name).map_err(|_| "libinput failed to assign the active seat")?;
     let libinput_backend = LibinputInputBackend::new(libinput_context.clone());
 
     let input_insert = event_loop.handle().insert_source(
