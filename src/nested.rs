@@ -1573,10 +1573,6 @@ impl AlpiniumState {
                     self.window_animations.push(animation);
                 }
 
-                let target_location = Point::from((placement.x, placement.y));
-                if self.space.element_location(&window) != Some(target_location) {
-                    self.space.map_element(window.clone(), target_location, false);
-                }
                 continue;
             }
 
@@ -1611,18 +1607,19 @@ impl AlpiniumState {
     /// Advance geometry transitions and send each final client resize configure
     /// only once, after its visual interpolation has completed.
     pub fn advance_animations(&mut self, now: Instant) {
-        let snapshots: Vec<(Window, bool, bool)> = self
+        let snapshots: Vec<(Window, AnimationRect, bool, bool)> = self
             .window_animations
             .iter()
             .map(|animation| (
                 animation.window.clone(),
+                animation.geometry.to,
                 animation.geometry.is_finished(now),
                 animation.configure_sent,
             ))
             .collect();
 
         let mut remove = Vec::new();
-        for (window, finished, configure_sent) in snapshots {
+        for (window, target, finished, configure_sent) in snapshots {
             if !self.space.elements().any(|mapped| mapped == &window) {
                 remove.push(window);
                 continue;
@@ -1668,6 +1665,13 @@ impl AlpiniumState {
                     let target_width = animation.geometry.to.width.round() as i32;
                     let target_height = animation.geometry.to.height.round() as i32;
                     if actual_size.w == target_width && actual_size.h == target_height {
+                        let target_location = Point::from((
+                            target.x.round() as i32,
+                            target.y.round() as i32,
+                        ));
+                        if self.space.element_location(&window) != Some(target_location) {
+                            self.space.map_element(window.clone(), target_location, false);
+                        }
                         remove.push(window);
                     }
                 }
