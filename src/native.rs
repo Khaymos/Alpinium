@@ -15,7 +15,7 @@ use smithay::{
         udev::UdevBackend,
     },
     reexports::{
-        drm::control::{Device, connector},
+        drm::control::{Device, ModeTypeFlags, connector},
         rustix::fs::OFlags,
     },
     utils::DeviceFd,
@@ -73,7 +73,7 @@ pub fn probe() -> Result<(), Box<dyn Error>> {
             }
 
             for (index, mode) in modes.iter().enumerate() {
-                let preferred = mode.mode_type().contains(drm::control::ModeTypeFlags::PREFERRED);
+                let preferred = mode.mode_type().contains(ModeTypeFlags::PREFERRED);
                 let (width, height) = mode.size();
                 println!(
                     "    {}: {}x{} @ {} Hz{}",
