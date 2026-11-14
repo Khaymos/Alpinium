@@ -348,7 +348,7 @@ pub fn run(
     let manager_for_session = output_manager.clone();
     let active_for_session = session_active.clone();
     let pending_for_session = frame_pending.clone();
-    let input_for_session = libinput_context.clone();
+    let mut input_for_session = libinput_context.clone();
     event_loop.handle().insert_source(
         session_notifier,
         move |event, _, _state: &mut AlpiniumState| match event {
