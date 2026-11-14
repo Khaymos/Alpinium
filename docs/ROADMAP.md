@@ -24,7 +24,10 @@
 - [x] Add a standalone XDG map/unmap/remap lifecycle probe.
 - [x] Initial keyboard-driven focus and client close requests.
 - [ ] Run the lifecycle probe against the nested compositor and harden unusual client/protocol sequences.
-- [ ] Improve pointer focus behavior.
+- [x] Route absolute and relative pointer motion to the surface beneath the cursor.
+- [x] Implement click-to-focus, empty-space focus clearing, and active-grab focus preservation.
+- [x] Keep XDG toplevel activation state synchronized with keyboard and host-window focus.
+- [ ] Verify pointer enter/leave and click-to-focus behavior with multiple clients on the nested backend.
 - [ ] Basic command/IPC interface.
 - [ ] Output resize and hotplug handling.
 
