@@ -7,6 +7,8 @@ use std::{
     error::Error,
     io::{self, Seek, SeekFrom, Write},
     os::fd::AsFd,
+    thread,
+    time::{Duration, Instant},
 };
 
 use wayland_client::{
@@ -111,7 +113,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     surface.attach(Some(&buffer), 0, 0);
     surface.damage(0, 0, WIDTH as i32, HEIGHT as i32);
     surface.commit();
-    event_queue.roundtrip(&mut state)?;
+
+    // Space::map_element is reconciled with outputs during the compositor's
+    // redraw/Space::refresh cycle. Wait for enter before asserting a matching
+    // leave after unmapping; roundtrip alone does not guarantee a redraw.
+    let map_deadline = Instant::now() + Duration::from_secs(5);
+    while state.enter_count == 0 && Instant::now() < map_deadline {
+        event_queue.roundtrip(&mut state)?;
+        if state.enter_count == 0 {
+            thread::sleep(Duration::from_millis(16));
+        }
+    }
+    if state.enter_count == 0 {
+        return Err(protocol_error("surface did not receive wl_surface.enter after initial map").into());
+    }
+    println!("PASS: surface entered its output after initial map");
 
     let enters_before_unmap = state.enter_count;
     let leaves_before_unmap = state.leave_count;
@@ -119,8 +135,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Unmap: a null buffer attachment followed by a commit.
     surface.attach(None, 0, 0);
     surface.commit();
-    event_queue.roundtrip(&mut state)?;
 
+    let unmap_deadline = Instant::now() + Duration::from_secs(5);
+    while state.leave_count <= leaves_before_unmap && Instant::now() < unmap_deadline {
+        event_queue.roundtrip(&mut state)?;
+        if state.leave_count <= leaves_before_unmap {
+            thread::sleep(Duration::from_millis(16));
+        }
+    }
     if state.leave_count <= leaves_before_unmap {
         return Err(protocol_error("surface did not receive wl_surface.leave after unmap").into());
     }
@@ -141,8 +163,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     surface.attach(Some(&buffer), 0, 0);
     surface.damage(0, 0, WIDTH as i32, HEIGHT as i32);
     surface.commit();
-    event_queue.roundtrip(&mut state)?;
 
+    let remap_deadline = Instant::now() + Duration::from_secs(5);
+    while state.enter_count <= enters_before_unmap && Instant::now() < remap_deadline {
+        event_queue.roundtrip(&mut state)?;
+        if state.enter_count <= enters_before_unmap {
+            thread::sleep(Duration::from_millis(16));
+        }
+    }
     if state.enter_count <= enters_before_unmap {
         return Err(protocol_error("surface did not receive wl_surface.enter after remap").into());
     }
