@@ -21,8 +21,10 @@
 
 - [x] Initial XDG toplevel buffer map/unmap/remap tracking and destruction cleanup.
 - [x] Recover keyboard focus when the focused toplevel unmaps or is destroyed.
+- [x] Add a standalone XDG map/unmap/remap lifecycle probe.
 - [x] Initial keyboard-driven focus and client close requests.
-- [ ] Harden lifecycle behavior under unusual client/protocol sequences and improve pointer focus.
+- [ ] Run the lifecycle probe against the nested compositor and harden unusual client/protocol sequences.
+- [ ] Improve pointer focus behavior.
 - [ ] Basic command/IPC interface.
 - [ ] Output resize and hotplug handling.
 
