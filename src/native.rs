@@ -52,7 +52,7 @@ use smithay::{
     utils::DeviceFd,
 };
 
-use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
+use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner, SimpleCrtcMapper};
 
 use crate::{
     config::Config,
@@ -248,7 +248,7 @@ pub fn run(
         render_formats,
     );
 
-    let mut scanner = DrmScanner::new();
+    let mut scanner = DrmScanner::<SimpleCrtcMapper>::new();
     let connected = scanner
         .scan_connectors(output_manager.device())?
         .into_iter()
