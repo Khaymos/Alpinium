@@ -31,17 +31,16 @@ use smithay::{
             compositor::FrameFlags,
         },
         egl::{EGLContext, EGLDisplay},
-        input::InputBackend,
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             element::surface::WaylandSurfaceRenderElement,
             gles::GlesRenderer,
+            Renderer,
         },
         session::{Event as SessionEvent, Session, libseat::LibSeatSession},
         udev::UdevBackend,
     },
     desktop::{Window, space::space_render_elements},
-    input::pointer::CursorImageStatus,
     output::{Mode as WlMode, Output, PhysicalProperties},
     reexports::{
         calloop::EventLoop,
@@ -50,8 +49,7 @@ use smithay::{
         rustix::fs::OFlags,
         wayland_server::Display,
     },
-    utils::{DeviceFd, Logical, Point},
-    wayland::compositor,
+    utils::DeviceFd,
 };
 
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
@@ -314,6 +312,7 @@ pub fn run(
     let drm_output = Rc::new(RefCell::new(drm_output));
     let output_manager = Rc::new(RefCell::new(output_manager));
     let session_active = Rc::new(Cell::new(true));
+    let frame_pending = Rc::new(Cell::new(false));
 
     let mut libinput_context =
         Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(session.clone().into());
@@ -329,6 +328,7 @@ pub fn run(
     input_insert?;
 
     let drm_output_for_events = drm_output.clone();
+    let pending_for_events = frame_pending.clone();
     event_loop.handle().insert_source(
         drm_notifier,
         move |event, _, _state: &mut AlpiniumState| match event {
@@ -336,6 +336,7 @@ pub fn run(
                 if let Err(error) = drm_output_for_events.borrow().frame_submitted() {
                     eprintln!("alpinium: DRM frame completion failed: {error:?}");
                 }
+                pending_for_events.set(false);
             }
             DrmEvent::VBlank(_) => {}
             DrmEvent::Error(error) => {
@@ -346,12 +347,14 @@ pub fn run(
 
     let manager_for_session = output_manager.clone();
     let active_for_session = session_active.clone();
+    let pending_for_session = frame_pending.clone();
     let input_for_session = libinput_context.clone();
     event_loop.handle().insert_source(
         session_notifier,
         move |event, _, _state: &mut AlpiniumState| match event {
             SessionEvent::PauseSession => {
                 active_for_session.set(false);
+                pending_for_session.set(false);
                 input_for_session.suspend();
                 manager_for_session.borrow_mut().pause();
                 println!("Alpinium paused: seat switched away");
@@ -362,6 +365,7 @@ pub fn run(
                 }
                 match manager_for_session.borrow_mut().activate(false) {
                     Ok(()) => {
+                        pending_for_session.set(false);
                         active_for_session.set(true);
                         println!("Alpinium resumed: seat is active");
                     }
@@ -399,9 +403,10 @@ pub fn run(
     let output_for_render = output.clone();
     let drm_output_for_render = drm_output.clone();
     let active_for_render = session_active.clone();
+    let pending_for_render = frame_pending.clone();
 
     event_loop.run(Some(Duration::from_millis(16)), &mut state, move |state| {
-        if !active_for_render.get() {
+        if !active_for_render.get() || pending_for_render.get() {
             return;
         }
 
@@ -413,6 +418,7 @@ pub fn run(
             &output_for_render,
             &mut renderer,
             &drm_output_for_render,
+            &pending_for_render,
         ) {
             eprintln!("alpinium: native frame failed: {error}");
             state.loop_signal.stop();
@@ -431,6 +437,7 @@ fn render_native_frame(
     output: &Output,
     renderer: &mut GlesRenderer,
     drm_output: &Rc<RefCell<NativeDrmOutput>>,
+    frame_pending: &Cell<bool>,
 ) -> Result<(), Box<dyn Error>> {
     let elements = space_render_elements::<_, Window, _>(
         renderer,
@@ -448,6 +455,7 @@ fn render_native_frame(
 
     if !frame.is_empty {
         drm_output.borrow_mut().queue_frame(())?;
+        frame_pending.set(true);
     }
 
     state.space.elements().for_each(|window| {
