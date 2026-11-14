@@ -121,7 +121,7 @@ The nested development backend is based on the structure of Smithay's Smallvil e
 - [x] Implement the first master-stack tiling and floating layout policies.
 - [x] Add initial focus-cycle and close-request keyboard shortcuts.
 - [x] Add configurable keybindings and Sway-style variables.\n- [ ] Add workspaces and output management.
-- [ ] Add decorations, animations, shadows, and rounded corners.
+- [ ] Add window open/close effects, workspace transitions, decorations, shadows, and rounded corners.
 - [ ] Integrate Alpinium into KhaymOS profiles and installer.
 
 ## Contributing
