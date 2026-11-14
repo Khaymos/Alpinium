@@ -40,7 +40,6 @@ use smithay::{
         session::{Event as SessionEvent, Session, libseat::LibSeatSession},
         udev::UdevBackend,
     },
-    desktop::{Window, space::space_render_elements},
     output::{Mode as WlMode, Output, PhysicalProperties},
     reexports::{
         calloop::EventLoop,
@@ -412,6 +411,7 @@ pub fn run(
 
         state.space.refresh();
         state.apply_layout();
+        state.advance_animations(std::time::Instant::now());
 
         if let Err(error) = render_native_frame(
             state,
@@ -439,12 +439,7 @@ fn render_native_frame(
     drm_output: &Rc<RefCell<NativeDrmOutput>>,
     frame_pending: &Cell<bool>,
 ) -> Result<(), Box<dyn Error>> {
-    let elements = space_render_elements::<_, Window, _>(
-        renderer,
-        [&state.space],
-        output,
-        1.0,
-    )?;
+    let elements = crate::render::space_render_elements(state, renderer, output);
 
     let frame = drm_output.borrow_mut().render_frame(
         renderer,
