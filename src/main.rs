@@ -26,6 +26,7 @@ fn run() -> Result<(), String> {
     let mut check_config = false;
     let mut print_config = false;
     let mut start_nested = false;
+    let mut start_native = false;
     let mut native_probe = false;
     let mut native_renderer_probe = false;
     let mut command: Option<OsString> = None;
@@ -43,6 +44,7 @@ fn run() -> Result<(), String> {
             Some("--check-config") => check_config = true,
             Some("--print-config") => print_config = true,
             Some("--nested") => start_nested = true,
+            Some("--native") => start_native = true,
             Some("--native-probe") => native_probe = true,
             Some("--native-renderer-probe") => native_renderer_probe = true,
             Some("--config") => {
@@ -62,11 +64,14 @@ fn run() -> Result<(), String> {
         }
     }
 
-    if command.is_some() && !start_nested {
-        return Err("--command can only be used together with --nested".to_string());
+    if command.is_some() && !start_nested && !start_native {
+        return Err("--command can only be used with --nested or --native".to_string());
     }
-    if start_nested && (check_config || print_config || native_probe || native_renderer_probe) {
-        return Err("--nested cannot be combined with config checks or native diagnostics".to_string());
+    if start_nested && start_native {
+        return Err("--nested and --native cannot be used together".to_string());
+    }
+    if (start_nested || start_native) && (check_config || print_config || native_probe || native_renderer_probe) {
+        return Err("compositor backends cannot be combined with config checks or native diagnostics".to_string());
     }
     if (native_probe || native_renderer_probe) && (check_config || print_config) {
         return Err("native diagnostics cannot be combined with --check-config or --print-config".to_string());
@@ -79,6 +84,9 @@ fn run() -> Result<(), String> {
 
     if start_nested {
         return nested::run(config, source, command).map_err(|error| error.to_string());
+    }
+    if start_native {
+        return native::run(config, source, command).map_err(|error| error.to_string());
     }
     if native_probe {
         return native::probe().map_err(|error| error.to_string());
@@ -117,7 +125,7 @@ fn run() -> Result<(), String> {
     println!("Alpinium {VERSION} — compositor development build");
     println!("Loaded configuration: {source_description}");
     println!("Selected layout mode: {}", config.mode);
-    println!("The nested Wayland compositor is available with --nested.");
+    println!("Use --nested for the host-window backend or --native from a TTY for DRM/KMS.");
     println!("Use --check-config to validate a config or --help for options.");
     Ok(())
 }
@@ -127,13 +135,14 @@ fn print_help() {
     println!("A configurable Wayland compositor for KhaymOS.\n");
     println!("Usage: alpinium [OPTIONS]\n");
     println!("Options:");
-    println!("  --config PATH         Load a specific configuration file");
-    println!("  --check-config        Parse and validate the selected configuration");
-    println!("  --print-config        Print the effective configuration");
-    println!("  --nested              Start Alpinium inside the current graphical session");
-    println!("  --native-probe        Inspect libseat/DRM devices without modesetting");
+    println!("  --config PATH          Load a specific configuration file");
+    println!("  --check-config         Parse and validate the selected configuration");
+    println!("  --print-config         Print the effective configuration");
+    println!("  --nested               Start Alpinium inside the current graphical session");
+    println!("  --native               Start the single-output DRM/KMS backend from a TTY");
+    println!("  --native-probe         Inspect libseat/DRM devices without modesetting");
     println!("  --native-renderer-probe Initialize GBM/EGL/GLES without modesetting");
-    println!("  --command PROGRAM     Launch PROGRAM as a client inside the nested compositor");
-    println!("  --version             Print version information");
-    println!("  -h, --help            Print this help message");
+    println!("  --command PROGRAM      Launch PROGRAM as a client inside the selected compositor");
+    println!("  --version              Print version information");
+    println!("  -h, --help             Print this help message");
 }
