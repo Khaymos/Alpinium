@@ -7,23 +7,26 @@ use smithay::{
         element::{
             AsRenderElements, Wrap,
             surface::WaylandSurfaceRenderElement,
-            utils::RescaleRenderElement,
+            utils::{Relocate, RelocateRenderElement, RescaleRenderElement},
         },
         ImportAll, Renderer,
     },
     desktop::space::SpaceRenderElements,
     output::Output,
-    utils::Scale,
+    utils::{Point, Scale},
 };
 
 use crate::nested::AlpiniumState;
 
-pub type AnimatedSpaceRenderElements<R> =
-    SpaceRenderElements<R, RescaleRenderElement<WaylandSurfaceRenderElement<R>>>;
+pub type AnimatedSpaceRenderElements<R: Renderer + ImportAll> =
+    SpaceRenderElements<
+        R,
+        RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<R>>>,
+    >;
 
-/// Build window render elements, applying the current geometry animation as a
-/// render-time scale. Space locations are advanced separately by the animation
-/// state, so input/focus handling remains attached to the moving window.
+/// Build window render elements with a shared geometry transition. The Space
+/// mapping remains at its target location, preserving z-order; the render
+/// element is relocated and rescaled for the current animation sample.
 pub fn space_render_elements<R>(
     state: &AlpiniumState,
     renderer: &mut R,
@@ -45,11 +48,11 @@ where
         };
 
         let geometry = window.geometry();
-        let render_location =
-            (mapped_location - geometry.loc).to_physical_precise_round(output_scale);
+        let base_location = mapped_location - geometry.loc;
+        let base_physical = base_location.to_physical_precise_round(output_scale);
         let surfaces = window.render_elements::<WaylandSurfaceRenderElement<R>>(
             renderer,
-            render_location,
+            base_physical,
             scale,
             1.0,
         );
@@ -61,14 +64,26 @@ where
                 (animated.width / source_width).max(0.01),
                 (animated.height / source_height).max(0.01),
             ));
+            let animated_location = Point::from((
+                animated.x.round() as i32 - geometry.loc.x,
+                animated.y.round() as i32 - geometry.loc.y,
+            ));
+            let animated_physical =
+                animated_location.to_physical_precise_round(output_scale);
+            let offset = animated_physical - base_physical;
 
             for surface in surfaces {
                 let scaled = RescaleRenderElement::from_element(
                     surface,
-                    render_location,
+                    base_physical,
                     animated_scale,
                 );
-                elements.push(SpaceRenderElements::Element(Wrap::from(scaled)));
+                let relocated = RelocateRenderElement::from_element(
+                    scaled,
+                    offset,
+                    Relocate::Relative,
+                );
+                elements.push(SpaceRenderElements::Element(Wrap::from(relocated)));
             }
         } else {
             elements.extend(surfaces.into_iter().map(SpaceRenderElements::Surface));
