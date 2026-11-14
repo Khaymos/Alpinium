@@ -1824,11 +1824,11 @@ impl AlpiniumState {
                     1.0,
                     1.0,
                 ));
-            let origin = Point::from((
+            let origin: Point<f64, Logical> = Point::from((
                 x - f64::from(geometry.loc.x),
                 y - f64::from(geometry.loc.y),
             ));
-            let local = Point::from((
+            let local: Point<f64, Logical> = Point::from((
                 (pos.x - origin.x) / scale_x.max(0.01),
                 (pos.y - origin.y) / scale_y.max(0.01),
             ));
@@ -1836,7 +1836,8 @@ impl AlpiniumState {
             if let Some((surface, surface_location)) =
                 window.surface_under(local, WindowSurfaceType::ALL)
             {
-                let global_location = Point::from((
+                let surface_location = surface_location.to_f64();
+                let global_location: Point<f64, Logical> = Point::from((
                     origin.x + surface_location.x * scale_x,
                     origin.y + surface_location.y * scale_y,
                 ));
@@ -1867,11 +1868,11 @@ impl AlpiniumState {
                     1.0,
                     1.0,
                 ));
-            let origin = Point::from((
+            let origin: Point<f64, Logical> = Point::from((
                 x - f64::from(geometry.loc.x),
                 y - f64::from(geometry.loc.y),
             ));
-            let local = Point::from((
+            let local: Point<f64, Logical> = Point::from((
                 (pos.x - origin.x) / scale_x.max(0.01),
                 (pos.y - origin.y) / scale_y.max(0.01),
             ));
@@ -1901,7 +1902,7 @@ use std::time::Duration;
 
 use smithay::{
     backend::{
-        renderer::damage::OutputDamageTracker,
+        renderer::{damage::OutputDamageTracker, gles::GlesRenderer},
         winit::{self, WinitEvent},
     },
     output::{Mode, Output, PhysicalProperties, Subpixel},
@@ -1915,7 +1916,7 @@ pub fn init_winit(
     event_loop: &mut EventLoop<AlpiniumState>,
     state: &mut AlpiniumState,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (mut backend, winit) = winit::init()?;
+    let (mut backend, winit) = winit::init::<GlesRenderer>()?;
 
     let mode = Mode {
         size: backend.window_size(),
