@@ -13,7 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 bitflags = "2.2.1"
-smithay = { version = "=0.7.0", default-features = false, features = ["backend_winit", "wayland_frontend", "desktop"] }
+smithay = { version = "=0.7.0", default-features = false, features = ["backend_winit", "backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "renderer_gl", "wayland_frontend", "desktop"] }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 
 [dev-dependencies]
