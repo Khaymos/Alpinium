@@ -27,6 +27,7 @@ struct State {
     compositor: Option<wl_compositor::WlCompositor>,
     shm: Option<wl_shm::WlShm>,
     wm_base: Option<xdg_wm_base::XdgWmBase>,
+    outputs: Vec<wl_output::WlOutput>,
     surface: Option<wl_surface::WlSurface>,
     xdg_surface: Option<xdg_surface::XdgSurface>,
     toplevel: Option<xdg_toplevel::XdgToplevel>,
@@ -234,6 +235,14 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                     state.wm_base = Some(registry.bind::<xdg_wm_base::XdgWmBase, _, _>(
                         name,
                         version.min(6),
+                        qh,
+                        (),
+                    ));
+                }
+                "wl_output" => {
+                    state.outputs.push(registry.bind::<wl_output::WlOutput, _, _>(
+                        name,
+                        version.min(4),
                         qh,
                         (),
                     ));
