@@ -109,6 +109,9 @@ fn run() -> Result<(), String> {
 
     if print_config {
         println!("# Loaded from: {source_description}");
+        for (name, value) in &config.variables {
+            println!("set ${name} {value}");
+        }
         println!("mode {}", config.mode);
         println!(
             "animations {}",
@@ -119,6 +122,9 @@ fn run() -> Result<(), String> {
         println!("gaps outer {}", config.outer_gap);
         println!("corner_radius {}", config.corner_radius);
         println!("shadows {}", if config.shadows { "enabled" } else { "disabled" });
+        for binding in &config.bindings {
+            println!("{}", binding.as_config());
+        }
         return Ok(());
     }
 
