@@ -1240,6 +1240,15 @@ impl AlpiniumState {
             crate::window_lifecycle::BufferTransition::Detached => {
                 self.buffer_attached_windows
                     .retain(|attached| attached != window);
+
+                // The XDG role post-commit hook runs before this handler updates
+                // Smithay's renderer buffer state. Reset explicitly now that the
+                // detach has been observed so the next bufferless commit can
+                // trigger the required fresh initial configure.
+                if let Some(toplevel) = window.toplevel() {
+                    toplevel.reset_initial_configure_sent();
+                }
+
                 self.unmap_window(window);
             }
         }
