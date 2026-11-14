@@ -55,10 +55,6 @@ impl AnimationRect {
         Self { x, y, width, height }
     }
 
-    pub fn rounded_location(self) -> (i32, i32) {
-        (self.x.round() as i32, self.y.round() as i32)
-    }
-
     pub fn approximately_eq(self, other: Self) -> bool {
         const EPSILON: f64 = 0.01;
         (self.x - other.x).abs() < EPSILON
