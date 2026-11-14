@@ -1,6 +1,9 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use crate::keybindings::{default_bindings, Binding};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LayoutMode {
@@ -26,10 +29,16 @@ pub struct Config {
     pub outer_gap: u32,
     pub corner_radius: u32,
     pub shadows: bool,
+    pub variables: BTreeMap<String, String>,
+    pub bindings: Vec<Binding>,
 }
 
 impl Default for Config {
     fn default() -> Self {
+        let variables = BTreeMap::from([
+            ("mod".to_string(), "Mod4".to_string()),
+            ("terminal".to_string(), "alacritty".to_string()),
+        ]);
         Self {
             mode: LayoutMode::Tiling,
             animations: true,
@@ -38,6 +47,8 @@ impl Default for Config {
             outer_gap: 5,
             corner_radius: 8,
             shadows: true,
+            bindings: default_bindings("Mod4"),
+            variables,
         }
     }
 }
@@ -50,10 +61,7 @@ pub struct ConfigError {
 
 impl ConfigError {
     fn at_line(line: usize, message: impl Into<String>) -> Self {
-        Self {
-            line: Some(line),
-            message: message.into(),
-        }
+        Self { line: Some(line), message: message.into() }
     }
 }
 
@@ -69,12 +77,12 @@ impl fmt::Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 impl Config {
-    /// Parse Alpinium's initial command-style configuration syntax.
-    ///
-    /// Supported directives are intentionally small in this first milestone.
-    /// Unknown directives fail loudly rather than being silently ignored.
+    /// Parse directives in order. Variables can reference variables declared earlier.
     pub fn parse(input: &str) -> Result<Self, ConfigError> {
         let mut config = Self::default();
+        let mut variables = config.variables.clone();
+        let mut explicit_bindings = false;
+        let mut parsed_bindings: Vec<Binding> = Vec::new();
 
         for (index, raw_line) in input.lines().enumerate() {
             let line_number = index + 1;
@@ -83,26 +91,69 @@ impl Config {
                 continue;
             }
 
-            let fields: Vec<&str> = line.split_whitespace().collect();
+            if line.starts_with("set ") || line.starts_with("set\t") {
+                let rest = line[3..].trim_start();
+                let mut fields = rest.splitn(2, char::is_whitespace);
+                let name = fields.next().unwrap_or_default();
+                let value = fields.next().unwrap_or_default().trim();
+                let variable = name.strip_prefix('$').ok_or_else(|| {
+                    ConfigError::at_line(line_number, "set expects a variable name beginning with '$'")
+                })?;
+                if !valid_variable_name(variable) {
+                    return Err(ConfigError::at_line(line_number, format!("invalid variable name '{name}'")));
+                }
+                if value.is_empty() {
+                    return Err(ConfigError::at_line(line_number, "set requires a variable value"));
+                }
+                let value = expand_variables(value, &variables, line_number)?;
+                variables.insert(variable.to_string(), value);
+                continue;
+            }
+
+            let expanded = expand_variables(line, &variables, line_number)?;
+
+            if let Some(rest) = expanded.strip_prefix("bindsym ") {
+                let mut fields = rest.splitn(2, char::is_whitespace);
+                let combination = fields.next().unwrap_or_default();
+                let command = fields.next().unwrap_or_default().trim_start();
+                if combination.is_empty() || command.is_empty() {
+                    return Err(ConfigError::at_line(
+                        line_number,
+                        "bindsym requires a key combination and an action",
+                    ));
+                }
+
+                let binding = Binding::parse(combination, command)
+                    .map_err(|message| ConfigError::at_line(line_number, message))?;
+                if !explicit_bindings {
+                    parsed_bindings.clear();
+                    explicit_bindings = true;
+                }
+                if parsed_bindings.iter().any(|existing| existing.same_trigger_for_config(&binding)) {
+                    return Err(ConfigError::at_line(
+                        line_number,
+                        format!("duplicate keybinding for '{combination}'"),
+                    ));
+                }
+                parsed_bindings.push(binding);
+                continue;
+            }
+
+            let fields: Vec<&str> = expanded.split_whitespace().collect();
             match fields.as_slice() {
                 ["mode", value] => {
                     config.mode = match *value {
                         "tiling" => LayoutMode::Tiling,
                         "floating" => LayoutMode::Floating,
-                        _ => {
-                            return Err(ConfigError::at_line(
-                                line_number,
-                                format!("unsupported mode '{value}'; expected 'tiling' or 'floating'"),
-                            ));
-                        }
+                        _ => return Err(ConfigError::at_line(
+                            line_number,
+                            format!("unsupported mode '{value}'; expected 'tiling' or 'floating'"),
+                        )),
                     };
                 }
                 ["animations", value] => {
                     config.animations = parse_enabled(value).ok_or_else(|| {
-                        ConfigError::at_line(
-                            line_number,
-                            "expected 'enabled' or 'disabled' for animations",
-                        )
+                        ConfigError::at_line(line_number, "expected 'enabled' or 'disabled' for animations")
                     })?;
                 }
                 ["animation_duration", value] => {
@@ -112,8 +163,7 @@ impl Config {
                             "animation_duration must use milliseconds, for example 200ms",
                         )
                     })?;
-                    config.animation_duration_ms =
-                        parse_u32(duration, line_number, "animation duration")?;
+                    config.animation_duration_ms = parse_u32(duration, line_number, "animation duration")?;
                 }
                 ["gaps", "inner", value] => {
                     config.inner_gap = parse_u32(value, line_number, "inner gap")?;
@@ -126,22 +176,24 @@ impl Config {
                 }
                 ["shadows", value] => {
                     config.shadows = parse_enabled(value).ok_or_else(|| {
-                        ConfigError::at_line(
-                            line_number,
-                            "expected 'enabled' or 'disabled' for shadows",
-                        )
+                        ConfigError::at_line(line_number, "expected 'enabled' or 'disabled' for shadows")
                     })?;
                 }
-                [directive, ..] => {
-                    return Err(ConfigError::at_line(
-                        line_number,
-                        format!("unknown or malformed directive '{directive}'"),
-                    ));
-                }
+                [directive, ..] => return Err(ConfigError::at_line(
+                    line_number,
+                    format!("unknown or malformed directive '{directive}'"),
+                )),
                 [] => {}
             }
         }
 
+        let default_modifier = variables.get("mod").map(String::as_str).unwrap_or("Mod4");
+        config.bindings = if explicit_bindings {
+            parsed_bindings
+        } else {
+            default_bindings(default_modifier)
+        };
+        config.variables = variables;
         Ok(config)
     }
 
@@ -167,6 +219,70 @@ impl Config {
     }
 }
 
+fn valid_variable_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else { return false; };
+    (first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+}
+
+fn expand_variables(
+    source: &str,
+    variables: &BTreeMap<String, String>,
+    line: usize,
+) -> Result<String, ConfigError> {
+    let chars: Vec<char> = source.chars().collect();
+    let mut output = String::new();
+    let mut index = 0;
+
+    while index < chars.len() {
+        if chars[index] != '$' {
+            output.push(chars[index]);
+            index += 1;
+            continue;
+        }
+
+        index += 1;
+        if index < chars.len() && chars[index] == '$' {
+            output.push('$');
+            index += 1;
+            continue;
+        }
+
+        let name = if index < chars.len() && chars[index] == '{' {
+            index += 1;
+            let start = index;
+            while index < chars.len() && chars[index] != '}' {
+                index += 1;
+            }
+            if index == chars.len() {
+                return Err(ConfigError::at_line(line, "unterminated variable reference"));
+            }
+            let name: String = chars[start..index].iter().collect();
+            index += 1;
+            name
+        } else {
+            let start = index;
+            while index < chars.len()
+                && (chars[index].is_ascii_alphanumeric() || chars[index] == '_')
+            {
+                index += 1;
+            }
+            chars[start..index].iter().collect()
+        };
+
+        if !valid_variable_name(&name) {
+            return Err(ConfigError::at_line(line, "invalid or empty variable reference"));
+        }
+        let value = variables.get(&name).ok_or_else(|| {
+            ConfigError::at_line(line, format!("undefined variable '${name}'"))
+        })?;
+        output.push_str(value);
+    }
+
+    Ok(output)
+}
+
 fn parse_enabled(value: &str) -> Option<bool> {
     match value {
         "enabled" => Some(true),
@@ -186,25 +302,15 @@ fn config_candidates(
     home: Option<&std::ffi::OsStr>,
 ) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
-
     if let Some(xdg_config_home) = xdg_config_home {
-        let xdg_config = PathBuf::from(xdg_config_home)
-            .join("alpinium")
-            .join("config");
+        let xdg_config = PathBuf::from(xdg_config_home).join("alpinium").join("config");
         if xdg_config.is_absolute() {
             candidates.push(xdg_config);
         }
     }
-
     if let Some(home) = home {
-        candidates.push(
-            PathBuf::from(home)
-                .join(".config")
-                .join("alpinium")
-                .join("config"),
-        );
+        candidates.push(PathBuf::from(home).join(".config").join("alpinium").join("config"));
     }
-
     candidates.push(PathBuf::from("/etc/alpinium/config"));
     candidates
 }
@@ -212,7 +318,6 @@ fn config_candidates(
 fn find_default_config() -> Option<PathBuf> {
     let xdg_config_home = std::env::var_os("XDG_CONFIG_HOME");
     let home = std::env::var_os("HOME");
-
     config_candidates(xdg_config_home.as_deref(), home.as_deref())
         .into_iter()
         .find(|path| path.is_file())
@@ -221,21 +326,21 @@ fn find_default_config() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keybindings::BindingAction;
 
     #[test]
     fn defaults_to_tiling_and_expected_visual_defaults() {
         let config = Config::parse("").expect("empty config should use defaults");
         assert_eq!(config, Config::default());
         assert_eq!(config.mode, LayoutMode::Tiling);
+        assert_eq!(config.bindings.len(), 5);
     }
 
     #[test]
     fn parses_floating_mode_and_visual_settings() {
         let config = Config::parse(
             "mode floating\nanimations disabled\nanimation_duration 350ms\ngaps inner 7\ngaps outer 11\ncorner_radius 12\nshadows disabled\n",
-        )
-        .expect("configuration should parse");
-
+        ).expect("configuration should parse");
         assert_eq!(config.mode, LayoutMode::Floating);
         assert!(!config.animations);
         assert_eq!(config.animation_duration_ms, 350);
@@ -275,40 +380,77 @@ mod tests {
     #[test]
     fn config_lookup_checks_xdg_then_home_then_system() {
         use std::ffi::OsStr;
-
-        let candidates = config_candidates(
-            Some(OsStr::new("/tmp/alpinium-xdg")),
-            Some(OsStr::new("/home/tester")),
-        );
-
-        assert_eq!(
-            candidates,
-            vec![
-                PathBuf::from("/tmp/alpinium-xdg/alpinium/config"),
-                PathBuf::from("/home/tester/.config/alpinium/config"),
-                PathBuf::from("/etc/alpinium/config"),
-            ]
-        );
+        let candidates = config_candidates(Some(OsStr::new("/tmp/alpinium-xdg")), Some(OsStr::new("/home/tester")));
+        assert_eq!(candidates, vec![
+            PathBuf::from("/tmp/alpinium-xdg/alpinium/config"),
+            PathBuf::from("/home/tester/.config/alpinium/config"),
+            PathBuf::from("/etc/alpinium/config"),
+        ]);
     }
 
     #[test]
     fn home_config_is_checked_when_xdg_config_home_is_missing() {
         use std::ffi::OsStr;
-
         let candidates = config_candidates(None, Some(OsStr::new("/home/tester")));
-
-        assert_eq!(
-            candidates,
-            vec![
-                PathBuf::from("/home/tester/.config/alpinium/config"),
-                PathBuf::from("/etc/alpinium/config"),
-            ]
-        );
+        assert_eq!(candidates, vec![
+            PathBuf::from("/home/tester/.config/alpinium/config"),
+            PathBuf::from("/etc/alpinium/config"),
+        ]);
     }
 
     #[test]
     fn rejects_negative_gaps() {
         let error = Config::parse("gaps inner -1").unwrap_err();
         assert_eq!(error.line, Some(1));
+    }
+
+    #[test]
+    fn expands_variables_in_binding_combinations_and_commands() {
+        let config = Config::parse(
+            "set $mod Mod1\nset $terminal alacritty\nbindsym $mod+Return exec $terminal --option value\n",
+        ).unwrap();
+        let binding = &config.bindings[0];
+        assert!(binding.modifiers.alt);
+        assert_eq!(binding.key, "Return");
+        assert_eq!(
+            binding.action,
+            BindingAction::Execute("alacritty --option value".to_string())
+        );
+        assert_eq!(config.variables["mod"], "Mod1");
+    }
+
+    #[test]
+    fn variables_can_reference_earlier_variables() {
+        let config = Config::parse(
+            "set $base Mod4\nset $mod $base\nbindsym $mod+Return exec alacritty\n",
+        ).unwrap();
+        assert!(config.bindings[0].modifiers.logo);
+    }
+
+    #[test]
+    fn undefined_variables_report_the_line_number() {
+        let error = Config::parse("bindsym $missing+Return exec alacritty").unwrap_err();
+        assert_eq!(error.line, Some(1));
+        assert!(error.message.contains("undefined variable"));
+    }
+
+    #[test]
+    fn unknown_binding_actions_are_rejected() {
+        let error = Config::parse("bindsym Mod4+q restart").unwrap_err();
+        assert_eq!(error.line, Some(1));
+        assert!(error.message.contains("unknown binding action"));
+    }
+
+    #[test]
+    fn custom_bindings_replace_the_builtin_set() {
+        let config = Config::parse("bindsym Mod1+Return exec alacritty\n").unwrap();
+        assert_eq!(config.bindings.len(), 1);
+        assert!(config.bindings[0].modifiers.alt);
+    }
+
+    #[test]
+    fn changing_mod_variable_changes_default_bindings() {
+        let config = Config::parse("set $mod Mod1\n").unwrap();
+        assert!(config.bindings.iter().all(|binding| binding.modifiers.alt));
     }
 }
