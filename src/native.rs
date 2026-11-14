@@ -151,12 +151,7 @@ pub fn renderer_probe() -> Result<(), Box<dyn Error>> {
     // active or shared with any other thread.
     let renderer = unsafe { GlesRenderer::new(egl_context)? };
 
-    let renderer_kind = if renderer.is_software() {
-        "software"
-    } else {
-        "hardware"
-    };
-    println!("OpenGL ES renderer initialized ({renderer_kind})");
+    println!("OpenGL ES renderer initialized");
     println!("Renderer capabilities: {:?}", renderer.capabilities());
 
     println!();
