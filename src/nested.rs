@@ -911,7 +911,7 @@ mod input {
 use smithay::{
     backend::input::{
         AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
     },
     input::{
         keyboard::{FilterResult, keysyms},
@@ -980,20 +980,48 @@ impl AlpiniumState {
                     },
                 );
             }
-            InputEvent::PointerMotion { .. } => {}
-            InputEvent::PointerMotionAbsolute { event, .. } => {
-                let output = self.space.outputs().next().unwrap();
+            InputEvent::PointerMotion { event, .. } => {
+                let Some(output) = self.space.outputs().next() else {
+                    return;
+                };
+                let Some(output_geo) = self.space.output_geometry(output) else {
+                    return;
+                };
 
-                let output_geo = self.space.output_geometry(output).unwrap();
+                let current = self.seat.get_pointer().unwrap().current_location();
+                let delta = event.delta();
+                let max_x = (output_geo.loc.x + output_geo.size.w - 1).max(output_geo.loc.x) as f64;
+                let max_y = (output_geo.loc.y + output_geo.size.h - 1).max(output_geo.loc.y) as f64;
+                let pos = smithay::utils::Point::from((
+                    (current.x + delta.x).clamp(output_geo.loc.x as f64, max_x),
+                    (current.y + delta.y).clamp(output_geo.loc.y as f64, max_y),
+                ));
+                let serial = SERIAL_COUNTER.next_serial();
+                let pointer = self.seat.get_pointer().unwrap();
+                let under = self.surface_under(pos);
+                pointer.motion(
+                    self,
+                    under,
+                    &MotionEvent {
+                        location: pos,
+                        serial,
+                        time: event.time_msec(),
+                    },
+                );
+                pointer.frame(self);
+            }
+            InputEvent::PointerMotionAbsolute { event, .. } => {
+                let Some(output) = self.space.outputs().next() else {
+                    return;
+                };
+                let Some(output_geo) = self.space.output_geometry(output) else {
+                    return;
+                };
 
                 let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
-
                 let serial = SERIAL_COUNTER.next_serial();
-
                 let pointer = self.seat.get_pointer().unwrap();
-
                 let under = self.surface_under(pos);
-
                 pointer.motion(
                     self,
                     under,
@@ -1014,17 +1042,26 @@ impl AlpiniumState {
 
                 let button_state = event.state();
 
-                if ButtonState::Pressed == button_state && !pointer.is_grabbed() {
-                    if let Some((window, _loc)) = self
-                        .space
+                let click_target = if ButtonState::Pressed == button_state {
+                    self.space
                         .element_under(pointer.current_location())
-                        .map(|(w, l)| (w.clone(), l))
-                    {
-                        self.focus_window(&window, serial);
-                    } else {
-                        self.clear_focus(serial);
-                    }
+                        .map(|(window, _)| window.clone())
+                } else {
+                    None
                 };
+                match crate::pointer_focus::click_focus_action(
+                    ButtonState::Pressed == button_state,
+                    pointer.is_grabbed(),
+                    click_target.is_some(),
+                ) {
+                    crate::pointer_focus::ClickFocusAction::FocusWindow => {
+                        if let Some(window) = click_target.as_ref() {
+                            self.focus_window(window, serial);
+                        }
+                    }
+                    crate::pointer_focus::ClickFocusAction::ClearFocus => self.clear_focus(serial),
+                    crate::pointer_focus::ClickFocusAction::KeepCurrent => {}
+                }
 
                 pointer.button(
                     self,
@@ -1126,6 +1163,8 @@ pub struct AlpiniumState {
     unmapped_window_locations: Vec<(Window, Point<i32, Logical>)>,
     /// Last focused window, retained while the host window is unfocused.
     focused_window: Option<Window>,
+    /// Whether the nested Winit host currently owns keyboard focus.
+    host_focused: bool,
     pub loop_signal: LoopSignal,
 
     // Smithay State
@@ -1274,14 +1313,26 @@ impl AlpiniumState {
 
     /// Focus and raise a mapped toplevel without changing its master/stack order.
     pub fn focus_window(&mut self, window: &Window, serial: smithay::utils::Serial) {
+        if !self.space.elements().any(|mapped| mapped == window) {
+            return;
+        }
+
+        if let Some(previous) = self.focused_window.as_ref() {
+            if previous != window {
+                previous.set_activated(false);
+            }
+        }
+        window.set_activated(self.host_focused);
         self.space.raise_element(window, true);
         self.focused_window = Some(window.clone());
 
-        if let Some(toplevel) = window.toplevel() {
-            let surface = toplevel.wl_surface().clone();
-            let keyboard = self.seat.get_keyboard().unwrap();
-            keyboard.set_focus(self, Some(surface), serial);
-        }
+        let surface = if self.host_focused {
+            window.toplevel().map(|toplevel| toplevel.wl_surface().clone())
+        } else {
+            None
+        };
+        let keyboard = self.seat.get_keyboard().unwrap();
+        keyboard.set_focus(self, surface, serial);
 
         self.space.elements().for_each(|window| {
             if let Some(toplevel) = window.toplevel() {
@@ -1352,6 +1403,7 @@ impl AlpiniumState {
 
     /// Keep keyboard focus in sync with the host Winit window.
     pub fn handle_host_focus(&mut self, focused: bool) {
+        self.host_focused = focused;
         let window = if focused {
             self.focused_window
                 .as_ref()
@@ -1360,10 +1412,17 @@ impl AlpiniumState {
         } else {
             None
         };
+
+        self.space.elements().for_each(|candidate| {
+            candidate.set_activated(window.as_ref() == Some(candidate));
+            if let Some(toplevel) = candidate.toplevel() {
+                toplevel.send_pending_configure();
+            }
+        });
+
         let surface = window.and_then(|window| {
             window.toplevel().map(|toplevel| toplevel.wl_surface().clone())
         });
-
         let keyboard = self.seat.get_keyboard().unwrap();
         keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
     }
@@ -1493,6 +1552,7 @@ impl AlpiniumState {
             buffer_attached_windows: Vec::new(),
             unmapped_window_locations: Vec::new(),
             focused_window: None,
+            host_focused: true,
             loop_signal,
             socket_name,
 
