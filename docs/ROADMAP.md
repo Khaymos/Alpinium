@@ -16,6 +16,7 @@
 - [x] Verify nested startup and render a real client on developer hardware.
 - [ ] Harden client lifecycle and pointer handling.
 - [x] Add initial keyboard focus cycling and close-request shortcuts.
+- [x] Add a Super+Shift+E compositor exit shortcut.
 
 ## Milestone 2 — compositor basics
 
