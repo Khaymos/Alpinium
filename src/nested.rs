@@ -914,7 +914,7 @@ use smithay::{
         KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
     },
     input::{
-        keyboard::FilterResult,
+        keyboard::{xkb, FilterResult},
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
     utils::SERIAL_COUNTER,
@@ -943,17 +943,23 @@ impl AlpiniumState {
                     |state, modifiers, key| {
                         let raw_syms = key.raw_syms();
                         let is_logo_key = raw_syms.iter().any(|symbol| {
-                            matches!(symbol.name(), Some("Super_L" | "Super_R"))
+                            matches!(
+                                xkb::keysym_get_name(*symbol).as_str(),
+                                "Super_L" | "Super_R"
+                            )
                         });
                         let action = raw_syms.iter().find_map(|symbol| {
-                            let key_name = symbol.name()?;
+                            let key_name = xkb::keysym_get_name(*symbol);
+                            if key_name.is_empty() {
+                                return None;
+                            }
                             state.config.bindings.iter().find(|binding| {
                                 binding.matches(
                                     modifiers.ctrl,
                                     modifiers.alt,
                                     modifiers.shift,
                                     modifiers.logo,
-                                    key_name,
+                                    &key_name,
                                 )
                             }).map(|binding| binding.action.clone())
                         });
