@@ -8,6 +8,7 @@ pub enum ShortcutKey {
     Logo,
     Tab,
     Q,
+    E,
     Other,
 }
 
@@ -18,6 +19,7 @@ pub enum Action {
     FocusNext,
     FocusPrevious,
     CloseFocused,
+    ExitCompositor,
 }
 
 /// Resolve an Alpinium shortcut.
@@ -42,7 +44,8 @@ pub fn resolve(
         ShortcutKey::Tab if shift => Some(Action::FocusPrevious),
         ShortcutKey::Tab => Some(Action::FocusNext),
         ShortcutKey::Q => Some(Action::CloseFocused),
-        ShortcutKey::Logo | ShortcutKey::Other => None,
+        ShortcutKey::E if shift => Some(Action::ExitCompositor),
+        ShortcutKey::Logo | ShortcutKey::E | ShortcutKey::Other => None,
     }
 }
 
@@ -63,6 +66,21 @@ mod tests {
     #[test]
     fn super_q_requests_close_for_the_focused_window() {
         assert_eq!(resolve(true, false, true, ShortcutKey::Q), Some(Action::CloseFocused));
+    }
+
+    #[test]
+    fn super_shift_e_exits_the_compositor() {
+        assert_eq!(resolve(true, true, true, ShortcutKey::E), Some(Action::ExitCompositor));
+    }
+
+    #[test]
+    fn super_e_without_shift_is_forwarded() {
+        assert_eq!(resolve(true, false, true, ShortcutKey::E), None);
+    }
+
+    #[test]
+    fn super_shift_e_key_release_is_forwarded() {
+        assert_eq!(resolve(true, true, false, ShortcutKey::E), None);
     }
 
     #[test]
