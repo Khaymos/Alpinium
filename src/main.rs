@@ -27,6 +27,7 @@ fn run() -> Result<(), String> {
     let mut print_config = false;
     let mut start_nested = false;
     let mut native_probe = false;
+    let mut native_renderer_probe = false;
     let mut command: Option<OsString> = None;
 
     while let Some(argument) = args.next() {
@@ -43,6 +44,7 @@ fn run() -> Result<(), String> {
             Some("--print-config") => print_config = true,
             Some("--nested") => start_nested = true,
             Some("--native-probe") => native_probe = true,
+            Some("--native-renderer-probe") => native_renderer_probe = true,
             Some("--config") => {
                 let path = args
                     .next()
@@ -63,11 +65,14 @@ fn run() -> Result<(), String> {
     if command.is_some() && !start_nested {
         return Err("--command can only be used together with --nested".to_string());
     }
-    if start_nested && (check_config || print_config || native_probe) {
-        return Err("--nested cannot be combined with --check-config, --print-config, or --native-probe".to_string());
+    if start_nested && (check_config || print_config || native_probe || native_renderer_probe) {
+        return Err("--nested cannot be combined with config checks or native diagnostics".to_string());
     }
-    if native_probe && (check_config || print_config) {
-        return Err("--native-probe cannot be combined with --check-config or --print-config".to_string());
+    if (native_probe || native_renderer_probe) && (check_config || print_config) {
+        return Err("native diagnostics cannot be combined with --check-config or --print-config".to_string());
+    }
+    if native_probe && native_renderer_probe {
+        return Err("choose either --native-probe or --native-renderer-probe".to_string());
     }
 
     let (config, source) = Config::load(explicit_config.as_deref())?;
@@ -77,6 +82,9 @@ fn run() -> Result<(), String> {
     }
     if native_probe {
         return native::probe().map_err(|error| error.to_string());
+    }
+    if native_renderer_probe {
+        return native::renderer_probe().map_err(|error| error.to_string());
     }
 
     let source_description = source
@@ -119,12 +127,13 @@ fn print_help() {
     println!("A configurable Wayland compositor for KhaymOS.\n");
     println!("Usage: alpinium [OPTIONS]\n");
     println!("Options:");
-    println!("  --config PATH     Load a specific configuration file");
-    println!("  --check-config    Parse and validate the selected configuration");
-    println!("  --print-config    Print the effective configuration");
-    println!("  --nested          Start Alpinium inside the current graphical session");
-    println!("  --native-probe    Inspect libseat/DRM devices without modesetting");
-    println!("  --command PROGRAM Launch PROGRAM as a client inside the nested compositor");
-    println!("  --version         Print version information");
-    println!("  -h, --help        Print this help message");
+    println!("  --config PATH         Load a specific configuration file");
+    println!("  --check-config        Parse and validate the selected configuration");
+    println!("  --print-config        Print the effective configuration");
+    println!("  --nested              Start Alpinium inside the current graphical session");
+    println!("  --native-probe        Inspect libseat/DRM devices without modesetting");
+    println!("  --native-renderer-probe Initialize GBM/EGL/GLES without modesetting");
+    println!("  --command PROGRAM     Launch PROGRAM as a client inside the nested compositor");
+    println!("  --version             Print version information");
+    println!("  -h, --help            Print this help message");
 }
