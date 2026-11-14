@@ -26,6 +26,8 @@ The initial keyboard shortcut layer is isolated in `src/keybindings.rs`. Smithay
 
 The nested backend also tracks XDG toplevel buffer transitions. A buffer detach removes the window from the visible space and triggers focus recovery when necessary; a subsequent bufferless commit completes the XDG initial-configure handshake before remapping. Remapped windows retain their prior position in floating mode. Destroyed toplevels are removed from compositor tracking, including the stable creation-order list. The pure buffer-transition classifier is covered by unit tests in `src/window_lifecycle.rs`. A standalone client in `examples/xdg_lifecycle_probe.rs` exercises the actual configure, detach, leave, remap, and enter sequence; see `docs/LIFECYCLE_TESTING.md` for instructions.
 
+Pointer input is routed to the surface beneath the cursor for both absolute and relative motion; relative motion is accumulated and clamped to the active output. Button presses implement click-to-focus: managed windows are raised and receive keyboard focus, clicks on empty space clear focus, and active move/resize grabs retain their existing focus. Focus changes update the XDG toplevel `activated` state, including host-window focus loss and restoration. The click-focus policy is covered by unit tests in `src/pointer_focus.rs`.
+
 ## Planned layers
 
 ~~~text
