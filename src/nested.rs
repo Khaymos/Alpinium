@@ -1611,19 +1611,18 @@ impl AlpiniumState {
     /// Advance geometry transitions and send each final client resize configure
     /// only once, after its visual interpolation has completed.
     pub fn advance_animations(&mut self, now: Instant) {
-        let snapshots: Vec<(Window, AnimationRect, bool, bool)> = self
+        let snapshots: Vec<(Window, bool, bool)> = self
             .window_animations
             .iter()
             .map(|animation| (
                 animation.window.clone(),
-                animation.geometry.sample(now),
                 animation.geometry.is_finished(now),
                 animation.configure_sent,
             ))
             .collect();
 
         let mut remove = Vec::new();
-        for (window, sample, finished, configure_sent) in snapshots {
+        for (window, finished, configure_sent) in snapshots {
             if !self.space.elements().any(|mapped| mapped == &window) {
                 remove.push(window);
                 continue;
