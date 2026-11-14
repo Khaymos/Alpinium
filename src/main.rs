@@ -3,6 +3,7 @@ mod layout;
 mod keybindings;
 mod nested;
 mod window_lifecycle;
+mod pointer_focus;
 
 use config::Config;
 use std::env;
