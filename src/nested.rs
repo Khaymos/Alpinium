@@ -1060,9 +1060,7 @@ impl AlpiniumState {
                 let button_state = event.state();
 
                 let click_target = if ButtonState::Pressed == button_state {
-                    self.space
-                        .element_under(pointer.current_location())
-                        .map(|(window, _)| window.clone())
+                    self.window_under(pointer.current_location())
                 } else {
                     None
                 };
@@ -1575,9 +1573,9 @@ impl AlpiniumState {
                     self.window_animations.push(animation);
                 }
 
-                let location = Point::from(from.rounded_location());
-                if self.space.element_location(&window) != Some(location) {
-                    self.space.map_element(window.clone(), location, false);
+                let target_location = Point::from((placement.x, placement.y));
+                if self.space.element_location(&window) != Some(target_location) {
+                    self.space.map_element(window.clone(), target_location, false);
                 }
                 continue;
             }
@@ -1629,11 +1627,6 @@ impl AlpiniumState {
             if !self.space.elements().any(|mapped| mapped == &window) {
                 remove.push(window);
                 continue;
-            }
-
-            let location = Point::from(sample.rounded_location());
-            if self.space.element_location(&window) != Some(location) {
-                self.space.map_element(window.clone(), location, false);
             }
 
             if finished && !configure_sent {
@@ -1804,11 +1797,84 @@ impl AlpiniumState {
         socket_name
     }
 
+    /// Find the Wayland surface under a point, accounting for render-time
+    /// movement and scaling during a geometry transition.
     pub fn surface_under(&self, pos: Point<f64, Logical>) -> Option<(WlSurface, Point<f64, Logical>)> {
-        self.space.element_under(pos).and_then(|(window, location)| {
+        let now = Instant::now();
+        for window in self.space.elements().rev() {
+            let Some(mapped_location) = self.space.element_location(window) else {
+                continue;
+            };
+            let geometry = window.geometry();
+            let animated = self.animation_geometry(window, now);
+            let (x, y, scale_x, scale_y) = animated
+                .map(|rect| (
+                    rect.x,
+                    rect.y,
+                    rect.width / f64::from(geometry.size.w.max(1)),
+                    rect.height / f64::from(geometry.size.h.max(1)),
+                ))
+                .unwrap_or((
+                    f64::from(mapped_location.x),
+                    f64::from(mapped_location.y),
+                    1.0,
+                    1.0,
+                ));
+            let origin = Point::from((
+                x - f64::from(geometry.loc.x),
+                y - f64::from(geometry.loc.y),
+            ));
+            let local = Point::from((
+                (pos.x - origin.x) / scale_x.max(0.01),
+                (pos.y - origin.y) / scale_y.max(0.01),
+            ));
+
+            if let Some((surface, surface_location)) =
+                window.surface_under(local, WindowSurfaceType::ALL)
+            {
+                let global_location = Point::from((
+                    origin.x + surface_location.x * scale_x,
+                    origin.y + surface_location.y * scale_y,
+                ));
+                return Some((surface, global_location));
+            }
+        }
+        None
+    }
+
+    /// Find the topmost window under a point using the same animated geometry
+    /// as rendering, so pointer focus follows moving/resizing windows.
+    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<Window> {
+        let now = Instant::now();
+        self.space.elements().rev().find_map(|window| {
+            let mapped_location = self.space.element_location(window)?;
+            let geometry = window.geometry();
+            let animated = self.animation_geometry(window, now);
+            let (x, y, scale_x, scale_y) = animated
+                .map(|rect| (
+                    rect.x,
+                    rect.y,
+                    rect.width / f64::from(geometry.size.w.max(1)),
+                    rect.height / f64::from(geometry.size.h.max(1)),
+                ))
+                .unwrap_or((
+                    f64::from(mapped_location.x),
+                    f64::from(mapped_location.y),
+                    1.0,
+                    1.0,
+                ));
+            let origin = Point::from((
+                x - f64::from(geometry.loc.x),
+                y - f64::from(geometry.loc.y),
+            ));
+            let local = Point::from((
+                (pos.x - origin.x) / scale_x.max(0.01),
+                (pos.y - origin.y) / scale_y.max(0.01),
+            ));
+
             window
-                .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
-                .map(|(s, p)| (s, (p + location).to_f64()))
+                .surface_under(local, WindowSurfaceType::ALL)
+                .map(|_| window.clone())
         })
     }
 }
