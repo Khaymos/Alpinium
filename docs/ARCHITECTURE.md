@@ -28,7 +28,7 @@ A `--native-probe` diagnostic uses libseat and udev to open DRM devices and enum
 
 A separate `--native-renderer-probe` diagnostic opens the first DRM device through libseat, initializes GBM, EGL, and the GLES renderer, and reports the renderer capabilities. It intentionally stops before creating a DRM output or committing any KMS state, allowing GPU-driver compatibility to be checked before display takeover.
 
-The nested backend also tracks XDG toplevel buffer transitions. A buffer detach removes the window from the visible space and triggers focus recovery when necessary; a subsequent bufferless commit completes the XDG initial-configure handshake before remapping. Remapped windows retain their prior position in floating mode. Destroyed toplevels are removed from compositor tracking, including the stable creation-order list. The pure buffer-transition classifier is covered by unit tests in `src/window_lifecycle.rs`. A standalone client in `examples/xdg_lifecycle_probe.rs` exercises the actual configure, detach, leave, remap, and enter sequence; see `docs/LIFECYCLE_TESTING.md` for instructions.
+The first native compositor runtime reuses the same Wayland state and input routing with libseat, libinput, GBM, EGL, GLES and Smithay DRM output management. It is deliberately limited to the verified internal eDP-1 connector on one DRM card; it handles VT pause/resume through libseat and supports launching a Wayland client with `--native --command PROGRAM`. External displays, connector hotplug, and multi-GPU support remain future work.\n\nThe nested backend also tracks XDG toplevel buffer transitions. A buffer detach removes the window from the visible space and triggers focus recovery when necessary; a subsequent bufferless commit completes the XDG initial-configure handshake before remapping. Remapped windows retain their prior position in floating mode. Destroyed toplevels are removed from compositor tracking, including the stable creation-order list. The pure buffer-transition classifier is covered by unit tests in `src/window_lifecycle.rs`. A standalone client in `examples/xdg_lifecycle_probe.rs` exercises the actual configure, detach, leave, remap, and enter sequence; see `docs/LIFECYCLE_TESTING.md` for instructions.
 
 Pointer input is routed to the surface beneath the cursor for both absolute and relative motion; relative motion is accumulated and clamped to the active output. Button presses implement click-to-focus: managed windows are raised and receive keyboard focus, clicks on empty space clear focus, and active move/resize grabs retain their existing focus. Focus changes update the XDG toplevel `activated` state, including host-window focus loss and restoration. The click-focus policy is covered by unit tests in `src/pointer_focus.rs`.
 
@@ -42,7 +42,7 @@ Alpinium process
 │   └── runtime settings
 ├── Wayland backend (Smithay)
 │   ├── nested Winit backend (initial)
-│   ├── future DRM/session backend
+│   ├── single-output DRM/session backend (initial eDP-1 support)
 │   ├── input and output management
 │   └── Wayland protocol globals
 ├── Compositor core
