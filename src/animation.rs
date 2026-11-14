@@ -35,7 +35,7 @@ impl AnimationCurve {
         match self {
             Self::Linear => progress,
             Self::EaseIn => progress * progress,
-            Self::EaseOut => 1.0 - (1.0 - progress) * (1.0 - progress),
+            Self::EaseOut => 1.0 - (1.0 - progress).powi(3),
             Self::EaseInOut if progress < 0.5 => 2.0 * progress * progress,
             Self::EaseInOut => 1.0 - (-2.0 * progress + 2.0).powi(2) / 2.0,
         }
@@ -52,7 +52,12 @@ pub struct AnimationRect {
 
 impl AnimationRect {
     pub fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     pub fn approximately_eq(self, other: Self) -> bool {
@@ -65,9 +70,37 @@ impl AnimationRect {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GeometryDelta {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+impl GeometryDelta {
+    pub fn between(from: AnimationRect, to: AnimationRect) -> Self {
+        Self {
+            x: from.x - to.x,
+            y: from.y - to.y,
+            width: from.width - to.width,
+            height: from.height - to.height,
+        }
+    }
+
+    pub fn apply(self, target: AnimationRect, remaining: f64) -> AnimationRect {
+        AnimationRect {
+            x: target.x + self.x * remaining,
+            y: target.y + self.y * remaining,
+            width: target.width + self.width * remaining,
+            height: target.height + self.height * remaining,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GeometryAnimation {
-    pub from: AnimationRect,
     pub to: AnimationRect,
+    pub delta: GeometryDelta,
     pub started_at: Instant,
     pub duration: Duration,
     pub curve: AnimationCurve,
@@ -81,33 +114,34 @@ impl GeometryAnimation {
         duration: Duration,
         curve: AnimationCurve,
     ) -> Self {
-        Self { from, to, started_at, duration, curve }
+        Self {
+            to,
+            delta: GeometryDelta::between(from, to),
+            started_at,
+            duration,
+            curve,
+        }
     }
 
     pub fn progress(self, now: Instant) -> f64 {
         if self.duration.is_zero() {
             return 1.0;
         }
-
-        (now.saturating_duration_since(self.started_at).as_secs_f64()
-            / self.duration.as_secs_f64())
-        .clamp(0.0, 1.0)
+        (now.saturating_duration_since(self.started_at).as_secs_f64() / self.duration.as_secs_f64())
+            .clamp(0.0, 1.0)
     }
 
     pub fn is_finished(self, now: Instant) -> bool {
         self.progress(now) >= 1.0
     }
 
-    pub fn sample(self, now: Instant) -> AnimationRect {
-        let amount = self.curve.apply(self.progress(now));
-        let interpolate = |start: f64, end: f64| start + (end - start) * amount;
+    pub fn start_rect(self) -> AnimationRect {
+        self.delta.apply(self.to, 1.0)
+    }
 
-        AnimationRect {
-            x: interpolate(self.from.x, self.to.x),
-            y: interpolate(self.from.y, self.to.y),
-            width: interpolate(self.from.width, self.to.width),
-            height: interpolate(self.from.height, self.to.height),
-        }
+    pub fn sample(self, now: Instant) -> AnimationRect {
+        let eased = self.curve.apply(self.progress(now));
+        self.delta.apply(self.to, 1.0 - eased)
     }
 }
 
@@ -130,8 +164,11 @@ mod tests {
             AnimationCurve::Linear,
         );
 
-        assert_eq!(animation.sample(start), animation.from);
-        assert_eq!(animation.sample(start + Duration::from_millis(200)), animation.to);
+        assert_eq!(animation.sample(start), animation.start_rect());
+        assert_eq!(
+            animation.sample(start + Duration::from_millis(200)),
+            animation.to
+        );
         assert!(animation.is_finished(start + Duration::from_millis(200)));
     }
 

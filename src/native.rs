@@ -23,19 +23,15 @@ use smithay::{
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
         },
         drm::{
-            DrmDevice,
-            DrmDeviceFd,
-            DrmEvent,
+            DrmDevice, DrmDeviceFd, DrmEvent,
+            compositor::FrameFlags,
             exporter::gbm::GbmFramebufferExporter,
             output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements},
-            compositor::FrameFlags,
         },
         egl::{EGLContext, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
-            element::surface::WaylandSurfaceRenderElement,
-            gles::GlesRenderer,
-            ImportMemWl,
+            ImportMemWl, element::surface::WaylandSurfaceRenderElement, gles::GlesRenderer,
         },
         session::{Event as SessionEvent, Session, libseat::LibSeatSession},
         udev::UdevBackend,
@@ -53,10 +49,7 @@ use smithay::{
 
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner, SimpleCrtcMapper};
 
-use crate::{
-    config::Config,
-    nested::AlpiniumState,
-};
+use crate::{config::Config, nested::AlpiniumState};
 
 type NativeDrmOutputManager = DrmOutputManager<
     GbmAllocator<DrmDeviceFd>,
@@ -65,12 +58,8 @@ type NativeDrmOutputManager = DrmOutputManager<
     DrmDeviceFd,
 >;
 
-type NativeDrmOutput = DrmOutput<
-    GbmAllocator<DrmDeviceFd>,
-    GbmFramebufferExporter<DrmDeviceFd>,
-    (),
-    DrmDeviceFd,
->;
+type NativeDrmOutput =
+    DrmOutput<GbmAllocator<DrmDeviceFd>, GbmFramebufferExporter<DrmDeviceFd>, (), DrmDeviceFd>;
 
 fn drm_device_paths(seat_name: &str) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     let udev = UdevBackend::new(seat_name)?;
@@ -232,7 +221,12 @@ pub fn run(
     // SAFETY: renderer and context remain on this event-loop thread.
     let mut renderer = unsafe { GlesRenderer::new(egl_context)? };
 
-    let render_formats = renderer.egl_context().dmabuf_render_formats().iter().copied().collect::<Vec<_>>();
+    let render_formats = renderer
+        .egl_context()
+        .dmabuf_render_formats()
+        .iter()
+        .copied()
+        .collect::<Vec<_>>();
     let allocator = GbmAllocator::new(
         gbm.clone(),
         GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT,
@@ -259,7 +253,10 @@ pub fn run(
                 "{}-{}",
                 connector.interface().as_str(),
                 connector.interface_id()
-            ) == "eDP-1" => Some((connector, crtc)),
+            ) == "eDP-1" =>
+            {
+                Some((connector, crtc))
+            }
             _ => None,
         })
         .ok_or("the verified internal eDP-1 connector is not available")?;
@@ -295,18 +292,16 @@ pub fn run(
     state.shm_state.update_formats(renderer.shm_formats());
 
     let planes = output_manager.device().planes(&crtc)?;
-    let drm_output = output_manager.initialize_output::<
-        GlesRenderer,
-        WaylandSurfaceRenderElement<GlesRenderer>,
-    >(
-        crtc,
-        drm_mode,
-        &[connector.handle()],
-        &output,
-        Some(planes),
-        &mut renderer,
-        &DrmOutputRenderElements::default(),
-    )?;
+    let drm_output = output_manager
+        .initialize_output::<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>(
+            crtc,
+            drm_mode,
+            &[connector.handle()],
+            &output,
+            Some(planes),
+            &mut renderer,
+            &DrmOutputRenderElements::default(),
+        )?;
 
     let drm_output = Rc::new(RefCell::new(drm_output));
     let output_manager = Rc::new(RefCell::new(output_manager));
@@ -315,7 +310,9 @@ pub fn run(
 
     let mut libinput_context =
         Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(session.clone().into());
-    libinput_context.udev_assign_seat(&seat_name).map_err(|_| "libinput failed to assign the active seat")?;
+    libinput_context
+        .udev_assign_seat(&seat_name)
+        .map_err(|_| "libinput failed to assign the active seat")?;
     let libinput_backend = LibinputInputBackend::new(libinput_context.clone());
 
     let input_insert = event_loop.handle().insert_source(
@@ -393,7 +390,10 @@ pub fn run(
     println!("Exit: Super+Shift+E. Switch back to KDE: Ctrl+Alt+F7.");
 
     if let Some(program) = command {
-        println!("Launching native Wayland client: {}", program.to_string_lossy());
+        println!(
+            "Launching native Wayland client: {}",
+            program.to_string_lossy()
+        );
         Command::new(&program)
             .env("WAYLAND_DISPLAY", &state.socket_name)
             .spawn()?;

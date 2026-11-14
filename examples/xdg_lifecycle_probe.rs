@@ -13,9 +13,7 @@ use std::{
 
 use wayland_client::{
     Connection, Dispatch, QueueHandle, delegate_noop,
-    protocol::{
-        wl_buffer, wl_compositor, wl_output, wl_registry, wl_shm, wl_shm_pool, wl_surface,
-    },
+    protocol::{wl_buffer, wl_compositor, wl_output, wl_registry, wl_shm, wl_shm_pool, wl_surface},
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
@@ -126,7 +124,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     if state.enter_count == 0 {
-        return Err(protocol_error("surface did not receive wl_surface.enter after initial map").into());
+        return Err(
+            protocol_error("surface did not receive wl_surface.enter after initial map").into(),
+        );
     }
     println!("PASS: surface entered its output after initial map");
 
@@ -156,7 +156,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     event_queue.roundtrip(&mut state)?;
 
     if state.configure_count <= configures_before_remap {
-        return Err(protocol_error("fresh XDG configure was not sent after the post-unmap commit").into());
+        return Err(
+            protocol_error("fresh XDG configure was not sent after the post-unmap commit").into(),
+        );
     }
     println!("PASS: fresh XDG configure received and acknowledged after unmap");
 
@@ -224,12 +226,8 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                     ));
                 }
                 "wl_shm" => {
-                    state.shm = Some(registry.bind::<wl_shm::WlShm, _, _>(
-                        name,
-                        version.min(1),
-                        qh,
-                        (),
-                    ));
+                    state.shm =
+                        Some(registry.bind::<wl_shm::WlShm, _, _>(name, version.min(1), qh, ()));
                 }
                 "xdg_wm_base" => {
                     state.wm_base = Some(registry.bind::<xdg_wm_base::XdgWmBase, _, _>(
@@ -240,12 +238,14 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                     ));
                 }
                 "wl_output" => {
-                    state.outputs.push(registry.bind::<wl_output::WlOutput, _, _>(
-                        name,
-                        version.min(4),
-                        qh,
-                        (),
-                    ));
+                    state
+                        .outputs
+                        .push(registry.bind::<wl_output::WlOutput, _, _>(
+                            name,
+                            version.min(4),
+                            qh,
+                            (),
+                        ));
                 }
                 _ => {}
             }

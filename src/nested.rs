@@ -2,939 +2,986 @@
 //! The backend runs in a host window and does not replace the user's desktop session.
 
 mod grabs {
-pub mod move_grab {
-//! Move grab is the state of a composer during which the client window is being dragged around.
-//!
-//! eg. Usually whenever a user clicks on the app's titlebar and starts dragging, the compositors
-//! enters a MoveSurfaceGrab state.
+    pub mod move_grab {
+        //! Move grab is the state of a composer during which the client window is being dragged around.
+        //!
+        //! eg. Usually whenever a user clicks on the app's titlebar and starts dragging, the compositors
+        //! enters a MoveSurfaceGrab state.
 
-use crate::nested::AlpiniumState;
-use smithay::{
-    desktop::Window,
-    input::pointer::{
-        AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
-        GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
-        GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-        PointerInnerHandle, RelativeMotionEvent,
-    },
-    reexports::wayland_server::protocol::wl_surface::WlSurface,
-    utils::{Logical, Point},
-};
+        use crate::nested::AlpiniumState;
+        use smithay::{
+            desktop::Window,
+            input::pointer::{
+                AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent,
+                GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
+                GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
+                GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
+                PointerInnerHandle, RelativeMotionEvent,
+            },
+            reexports::wayland_server::protocol::wl_surface::WlSurface,
+            utils::{Logical, Point},
+        };
 
-pub struct MoveSurfaceGrab {
-    pub start_data: PointerGrabStartData<AlpiniumState>,
-    pub window: Window,
-    pub initial_window_location: Point<i32, Logical>,
-}
-
-impl PointerGrab<AlpiniumState> for MoveSurfaceGrab {
-    fn motion(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        _focus: Option<(WlSurface, Point<f64, Logical>)>,
-        event: &MotionEvent,
-    ) {
-        // While the grab is active, no client has pointer focus
-        handle.motion(data, None, event);
-
-        let delta = event.location - self.start_data.location;
-        let new_location = self.initial_window_location.to_f64() + delta;
-        data.space
-            .map_element(self.window.clone(), new_location.to_i32_round(), true);
-    }
-
-    fn relative_motion(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        focus: Option<(WlSurface, Point<f64, Logical>)>,
-        event: &RelativeMotionEvent,
-    ) {
-        handle.relative_motion(data, focus, event);
-    }
-
-    fn button(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &ButtonEvent,
-    ) {
-        handle.button(data, event);
-
-        // The button is a button code as defined in the
-        // Linux kernel's linux/input-event-codes.h header file, e.g. BTN_LEFT.
-        const BTN_LEFT: u32 = 0x110;
-
-        if !handle.current_pressed().contains(&BTN_LEFT) {
-            // No more buttons are pressed, release the grab.
-            handle.unset_grab(self, data, event.serial, event.time, true);
+        pub struct MoveSurfaceGrab {
+            pub start_data: PointerGrabStartData<AlpiniumState>,
+            pub window: Window,
+            pub initial_window_location: Point<i32, Logical>,
         }
-    }
 
-    fn axis(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        details: AxisFrame,
-    ) {
-        handle.axis(data, details)
-    }
+        impl PointerGrab<AlpiniumState> for MoveSurfaceGrab {
+            fn motion(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                _focus: Option<(WlSurface, Point<f64, Logical>)>,
+                event: &MotionEvent,
+            ) {
+                // While the grab is active, no client has pointer focus
+                handle.motion(data, None, event);
 
-    fn frame(&mut self, data: &mut AlpiniumState, handle: &mut PointerInnerHandle<'_, AlpiniumState>) {
-        handle.frame(data);
-    }
-
-    fn gesture_swipe_begin(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GestureSwipeBeginEvent,
-    ) {
-        handle.gesture_swipe_begin(data, event)
-    }
-
-    fn gesture_swipe_update(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GestureSwipeUpdateEvent,
-    ) {
-        handle.gesture_swipe_update(data, event)
-    }
-
-    fn gesture_swipe_end(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GestureSwipeEndEvent,
-    ) {
-        handle.gesture_swipe_end(data, event)
-    }
-
-    fn gesture_pinch_begin(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GesturePinchBeginEvent,
-    ) {
-        handle.gesture_pinch_begin(data, event)
-    }
-
-    fn gesture_pinch_update(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GesturePinchUpdateEvent,
-    ) {
-        handle.gesture_pinch_update(data, event)
-    }
-
-    fn gesture_pinch_end(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GesturePinchEndEvent,
-    ) {
-        handle.gesture_pinch_end(data, event)
-    }
-
-    fn gesture_hold_begin(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GestureHoldBeginEvent,
-    ) {
-        handle.gesture_hold_begin(data, event)
-    }
-
-    fn gesture_hold_end(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GestureHoldEndEvent,
-    ) {
-        handle.gesture_hold_end(data, event)
-    }
-
-    fn start_data(&self) -> &PointerGrabStartData<AlpiniumState> {
-        &self.start_data
-    }
-
-    fn unset(&mut self, _data: &mut AlpiniumState) {}
-}
-
-}
-pub use move_grab::MoveSurfaceGrab;
-
-pub mod resize_grab {
-//! Resize grab is the state of a composer during which the client window is being resized.
-//!
-//! eg. Usually whenever a user clicks on the app's border and starts dragging, the compositors
-//! enters a ResizeSurfaceGrab state.
-
-use crate::nested::AlpiniumState;
-use smithay::{
-    desktop::{Space, Window},
-    input::pointer::{
-        AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
-        GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
-        GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-        PointerInnerHandle, RelativeMotionEvent,
-    },
-    reexports::{
-        wayland_protocols::xdg::shell::server::xdg_toplevel, wayland_server::protocol::wl_surface::WlSurface,
-    },
-    utils::{Logical, Point, Rectangle, Size},
-    wayland::{compositor, shell::xdg::SurfaceCachedState},
-};
-use std::cell::RefCell;
-
-bitflags::bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-    pub struct ResizeEdge: u32 {
-        const TOP          = 0b0001;
-        const BOTTOM       = 0b0010;
-        const LEFT         = 0b0100;
-        const RIGHT        = 0b1000;
-
-        const TOP_LEFT     = Self::TOP.bits() | Self::LEFT.bits();
-        const BOTTOM_LEFT  = Self::BOTTOM.bits() | Self::LEFT.bits();
-
-        const TOP_RIGHT    = Self::TOP.bits() | Self::RIGHT.bits();
-        const BOTTOM_RIGHT = Self::BOTTOM.bits() | Self::RIGHT.bits();
-    }
-}
-
-impl From<xdg_toplevel::ResizeEdge> for ResizeEdge {
-    #[inline]
-    fn from(x: xdg_toplevel::ResizeEdge) -> Self {
-        Self::from_bits(x as u32).unwrap()
-    }
-}
-
-pub struct ResizeSurfaceGrab {
-    start_data: PointerGrabStartData<AlpiniumState>,
-    window: Window,
-
-    edges: ResizeEdge,
-
-    initial_rect: Rectangle<i32, Logical>,
-    last_window_size: Size<i32, Logical>,
-}
-
-impl ResizeSurfaceGrab {
-    pub fn start(
-        start_data: PointerGrabStartData<AlpiniumState>,
-        window: Window,
-        edges: ResizeEdge,
-        initial_window_rect: Rectangle<i32, Logical>,
-    ) -> Self {
-        let initial_rect = initial_window_rect;
-
-        ResizeSurfaceState::with(window.toplevel().unwrap().wl_surface(), |state| {
-            *state = ResizeSurfaceState::Resizing { edges, initial_rect };
-        });
-
-        Self {
-            start_data,
-            window,
-            edges,
-            initial_rect,
-            last_window_size: initial_rect.size,
-        }
-    }
-}
-
-impl PointerGrab<AlpiniumState> for ResizeSurfaceGrab {
-    fn motion(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        _focus: Option<(WlSurface, Point<f64, Logical>)>,
-        event: &MotionEvent,
-    ) {
-        // While the grab is active, no client has pointer focus
-        handle.motion(data, None, event);
-
-        let mut delta = event.location - self.start_data.location;
-
-        let mut new_window_width = self.initial_rect.size.w;
-        let mut new_window_height = self.initial_rect.size.h;
-
-        if self.edges.intersects(ResizeEdge::LEFT | ResizeEdge::RIGHT) {
-            if self.edges.intersects(ResizeEdge::LEFT) {
-                delta.x = -delta.x;
+                let delta = event.location - self.start_data.location;
+                let new_location = self.initial_window_location.to_f64() + delta;
+                data.space
+                    .map_element(self.window.clone(), new_location.to_i32_round(), true);
             }
 
-            new_window_width = (self.initial_rect.size.w as f64 + delta.x) as i32;
-        }
-
-        if self.edges.intersects(ResizeEdge::TOP | ResizeEdge::BOTTOM) {
-            if self.edges.intersects(ResizeEdge::TOP) {
-                delta.y = -delta.y;
+            fn relative_motion(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                focus: Option<(WlSurface, Point<f64, Logical>)>,
+                event: &RelativeMotionEvent,
+            ) {
+                handle.relative_motion(data, focus, event);
             }
 
-            new_window_height = (self.initial_rect.size.h as f64 + delta.y) as i32;
+            fn button(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &ButtonEvent,
+            ) {
+                handle.button(data, event);
+
+                // The button is a button code as defined in the
+                // Linux kernel's linux/input-event-codes.h header file, e.g. BTN_LEFT.
+                const BTN_LEFT: u32 = 0x110;
+
+                if !handle.current_pressed().contains(&BTN_LEFT) {
+                    // No more buttons are pressed, release the grab.
+                    handle.unset_grab(self, data, event.serial, event.time, true);
+                }
+            }
+
+            fn axis(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                details: AxisFrame,
+            ) {
+                handle.axis(data, details)
+            }
+
+            fn frame(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+            ) {
+                handle.frame(data);
+            }
+
+            fn gesture_swipe_begin(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GestureSwipeBeginEvent,
+            ) {
+                handle.gesture_swipe_begin(data, event)
+            }
+
+            fn gesture_swipe_update(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GestureSwipeUpdateEvent,
+            ) {
+                handle.gesture_swipe_update(data, event)
+            }
+
+            fn gesture_swipe_end(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GestureSwipeEndEvent,
+            ) {
+                handle.gesture_swipe_end(data, event)
+            }
+
+            fn gesture_pinch_begin(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GesturePinchBeginEvent,
+            ) {
+                handle.gesture_pinch_begin(data, event)
+            }
+
+            fn gesture_pinch_update(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GesturePinchUpdateEvent,
+            ) {
+                handle.gesture_pinch_update(data, event)
+            }
+
+            fn gesture_pinch_end(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GesturePinchEndEvent,
+            ) {
+                handle.gesture_pinch_end(data, event)
+            }
+
+            fn gesture_hold_begin(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GestureHoldBeginEvent,
+            ) {
+                handle.gesture_hold_begin(data, event)
+            }
+
+            fn gesture_hold_end(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GestureHoldEndEvent,
+            ) {
+                handle.gesture_hold_end(data, event)
+            }
+
+            fn start_data(&self) -> &PointerGrabStartData<AlpiniumState> {
+                &self.start_data
+            }
+
+            fn unset(&mut self, _data: &mut AlpiniumState) {}
+        }
+    }
+    pub use move_grab::MoveSurfaceGrab;
+
+    pub mod resize_grab {
+        //! Resize grab is the state of a composer during which the client window is being resized.
+        //!
+        //! eg. Usually whenever a user clicks on the app's border and starts dragging, the compositors
+        //! enters a ResizeSurfaceGrab state.
+
+        use crate::nested::AlpiniumState;
+        use smithay::{
+            desktop::{Space, Window},
+            input::pointer::{
+                AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent,
+                GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
+                GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
+                GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
+                PointerInnerHandle, RelativeMotionEvent,
+            },
+            reexports::{
+                wayland_protocols::xdg::shell::server::xdg_toplevel,
+                wayland_server::protocol::wl_surface::WlSurface,
+            },
+            utils::{Logical, Point, Rectangle, Size},
+            wayland::{compositor, shell::xdg::SurfaceCachedState},
+        };
+        use std::cell::RefCell;
+
+        bitflags::bitflags! {
+            #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+            pub struct ResizeEdge: u32 {
+                const TOP          = 0b0001;
+                const BOTTOM       = 0b0010;
+                const LEFT         = 0b0100;
+                const RIGHT        = 0b1000;
+
+                const TOP_LEFT     = Self::TOP.bits() | Self::LEFT.bits();
+                const BOTTOM_LEFT  = Self::BOTTOM.bits() | Self::LEFT.bits();
+
+                const TOP_RIGHT    = Self::TOP.bits() | Self::RIGHT.bits();
+                const BOTTOM_RIGHT = Self::BOTTOM.bits() | Self::RIGHT.bits();
+            }
         }
 
-        let (min_size, max_size) =
-            compositor::with_states(self.window.toplevel().unwrap().wl_surface(), |states| {
-                let mut guard = states.cached_state.get::<SurfaceCachedState>();
-                let data = guard.current();
-                (data.min_size, data.max_size)
-            });
+        impl From<xdg_toplevel::ResizeEdge> for ResizeEdge {
+            #[inline]
+            fn from(x: xdg_toplevel::ResizeEdge) -> Self {
+                Self::from_bits(x as u32).unwrap()
+            }
+        }
 
-        let min_width = min_size.w.max(1);
-        let min_height = min_size.h.max(1);
+        pub struct ResizeSurfaceGrab {
+            start_data: PointerGrabStartData<AlpiniumState>,
+            window: Window,
 
-        let max_width = if max_size.w == 0 { i32::MAX } else { max_size.w };
-        let max_height = if max_size.h == 0 { i32::MAX } else { max_size.h };
+            edges: ResizeEdge,
 
-        self.last_window_size = Size::from((
-            new_window_width.max(min_width).min(max_width),
-            new_window_height.max(min_height).min(max_height),
-        ));
+            initial_rect: Rectangle<i32, Logical>,
+            last_window_size: Size<i32, Logical>,
+        }
 
-        let xdg = self.window.toplevel().unwrap();
-        xdg.with_pending_state(|state| {
-            state.states.set(xdg_toplevel::State::Resizing);
-            state.size = Some(self.last_window_size);
-        });
+        impl ResizeSurfaceGrab {
+            pub fn start(
+                start_data: PointerGrabStartData<AlpiniumState>,
+                window: Window,
+                edges: ResizeEdge,
+                initial_window_rect: Rectangle<i32, Logical>,
+            ) -> Self {
+                let initial_rect = initial_window_rect;
 
-        xdg.send_pending_configure();
-    }
+                ResizeSurfaceState::with(window.toplevel().unwrap().wl_surface(), |state| {
+                    *state = ResizeSurfaceState::Resizing {
+                        edges,
+                        initial_rect,
+                    };
+                });
 
-    fn relative_motion(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        focus: Option<(WlSurface, Point<f64, Logical>)>,
-        event: &RelativeMotionEvent,
-    ) {
-        handle.relative_motion(data, focus, event);
-    }
+                Self {
+                    start_data,
+                    window,
+                    edges,
+                    initial_rect,
+                    last_window_size: initial_rect.size,
+                }
+            }
+        }
 
-    fn button(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &ButtonEvent,
-    ) {
-        handle.button(data, event);
+        impl PointerGrab<AlpiniumState> for ResizeSurfaceGrab {
+            fn motion(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                _focus: Option<(WlSurface, Point<f64, Logical>)>,
+                event: &MotionEvent,
+            ) {
+                // While the grab is active, no client has pointer focus
+                handle.motion(data, None, event);
 
-        // The button is a button code as defined in the
-        // Linux kernel's linux/input-event-codes.h header file, e.g. BTN_LEFT.
-        const BTN_LEFT: u32 = 0x110;
+                let mut delta = event.location - self.start_data.location;
 
-        if !handle.current_pressed().contains(&BTN_LEFT) {
-            // No more buttons are pressed, release the grab.
-            handle.unset_grab(self, data, event.serial, event.time, true);
+                let mut new_window_width = self.initial_rect.size.w;
+                let mut new_window_height = self.initial_rect.size.h;
 
-            let xdg = self.window.toplevel().unwrap();
-            xdg.with_pending_state(|state| {
-                state.states.unset(xdg_toplevel::State::Resizing);
-                state.size = Some(self.last_window_size);
-            });
+                if self.edges.intersects(ResizeEdge::LEFT | ResizeEdge::RIGHT) {
+                    if self.edges.intersects(ResizeEdge::LEFT) {
+                        delta.x = -delta.x;
+                    }
 
-            xdg.send_pending_configure();
+                    new_window_width = (self.initial_rect.size.w as f64 + delta.x) as i32;
+                }
 
-            ResizeSurfaceState::with(xdg.wl_surface(), |state| {
-                *state = ResizeSurfaceState::WaitingForLastCommit {
-                    edges: self.edges,
-                    initial_rect: self.initial_rect,
+                if self.edges.intersects(ResizeEdge::TOP | ResizeEdge::BOTTOM) {
+                    if self.edges.intersects(ResizeEdge::TOP) {
+                        delta.y = -delta.y;
+                    }
+
+                    new_window_height = (self.initial_rect.size.h as f64 + delta.y) as i32;
+                }
+
+                let (min_size, max_size) = compositor::with_states(
+                    self.window.toplevel().unwrap().wl_surface(),
+                    |states| {
+                        let mut guard = states.cached_state.get::<SurfaceCachedState>();
+                        let data = guard.current();
+                        (data.min_size, data.max_size)
+                    },
+                );
+
+                let min_width = min_size.w.max(1);
+                let min_height = min_size.h.max(1);
+
+                let max_width = if max_size.w == 0 {
+                    i32::MAX
+                } else {
+                    max_size.w
                 };
-            });
-        }
-    }
+                let max_height = if max_size.h == 0 {
+                    i32::MAX
+                } else {
+                    max_size.h
+                };
 
-    fn axis(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        details: AxisFrame,
-    ) {
-        handle.axis(data, details)
-    }
+                self.last_window_size = Size::from((
+                    new_window_width.max(min_width).min(max_width),
+                    new_window_height.max(min_height).min(max_height),
+                ));
 
-    fn frame(&mut self, data: &mut AlpiniumState, handle: &mut PointerInnerHandle<'_, AlpiniumState>) {
-        handle.frame(data);
-    }
+                let xdg = self.window.toplevel().unwrap();
+                xdg.with_pending_state(|state| {
+                    state.states.set(xdg_toplevel::State::Resizing);
+                    state.size = Some(self.last_window_size);
+                });
 
-    fn gesture_swipe_begin(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GestureSwipeBeginEvent,
-    ) {
-        handle.gesture_swipe_begin(data, event)
-    }
-
-    fn gesture_swipe_update(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GestureSwipeUpdateEvent,
-    ) {
-        handle.gesture_swipe_update(data, event)
-    }
-
-    fn gesture_swipe_end(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GestureSwipeEndEvent,
-    ) {
-        handle.gesture_swipe_end(data, event)
-    }
-
-    fn gesture_pinch_begin(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GesturePinchBeginEvent,
-    ) {
-        handle.gesture_pinch_begin(data, event)
-    }
-
-    fn gesture_pinch_update(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GesturePinchUpdateEvent,
-    ) {
-        handle.gesture_pinch_update(data, event)
-    }
-
-    fn gesture_pinch_end(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GesturePinchEndEvent,
-    ) {
-        handle.gesture_pinch_end(data, event)
-    }
-
-    fn gesture_hold_begin(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GestureHoldBeginEvent,
-    ) {
-        handle.gesture_hold_begin(data, event)
-    }
-
-    fn gesture_hold_end(
-        &mut self,
-        data: &mut AlpiniumState,
-        handle: &mut PointerInnerHandle<'_, AlpiniumState>,
-        event: &GestureHoldEndEvent,
-    ) {
-        handle.gesture_hold_end(data, event)
-    }
-
-    fn start_data(&self) -> &PointerGrabStartData<AlpiniumState> {
-        &self.start_data
-    }
-
-    fn unset(&mut self, _data: &mut AlpiniumState) {}
-}
-
-/// State of the resize operation.
-///
-/// It is stored inside of WlSurface,
-/// and can be accessed using [`ResizeSurfaceState::with`]
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
-enum ResizeSurfaceState {
-    #[default]
-    Idle,
-    Resizing {
-        edges: ResizeEdge,
-        /// The initial window size and location.
-        initial_rect: Rectangle<i32, Logical>,
-    },
-    /// Resize is done, we are now waiting for last commit, to do the final move
-    WaitingForLastCommit {
-        edges: ResizeEdge,
-        /// The initial window size and location.
-        initial_rect: Rectangle<i32, Logical>,
-    },
-}
-
-impl ResizeSurfaceState {
-    fn with<F, T>(surface: &WlSurface, cb: F) -> T
-    where
-        F: FnOnce(&mut Self) -> T,
-    {
-        compositor::with_states(surface, |states| {
-            states.data_map.insert_if_missing(RefCell::<Self>::default);
-            let state = states.data_map.get::<RefCell<Self>>().unwrap();
-
-            cb(&mut state.borrow_mut())
-        })
-    }
-
-    fn commit(&mut self) -> Option<(ResizeEdge, Rectangle<i32, Logical>)> {
-        match *self {
-            Self::Resizing { edges, initial_rect } => Some((edges, initial_rect)),
-            Self::WaitingForLastCommit { edges, initial_rect } => {
-                // The resize is done, let's go back to idle
-                *self = Self::Idle;
-
-                Some((edges, initial_rect))
+                xdg.send_pending_configure();
             }
-            Self::Idle => None,
+
+            fn relative_motion(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                focus: Option<(WlSurface, Point<f64, Logical>)>,
+                event: &RelativeMotionEvent,
+            ) {
+                handle.relative_motion(data, focus, event);
+            }
+
+            fn button(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &ButtonEvent,
+            ) {
+                handle.button(data, event);
+
+                // The button is a button code as defined in the
+                // Linux kernel's linux/input-event-codes.h header file, e.g. BTN_LEFT.
+                const BTN_LEFT: u32 = 0x110;
+
+                if !handle.current_pressed().contains(&BTN_LEFT) {
+                    // No more buttons are pressed, release the grab.
+                    handle.unset_grab(self, data, event.serial, event.time, true);
+
+                    let xdg = self.window.toplevel().unwrap();
+                    xdg.with_pending_state(|state| {
+                        state.states.unset(xdg_toplevel::State::Resizing);
+                        state.size = Some(self.last_window_size);
+                    });
+
+                    xdg.send_pending_configure();
+
+                    ResizeSurfaceState::with(xdg.wl_surface(), |state| {
+                        *state = ResizeSurfaceState::WaitingForLastCommit {
+                            edges: self.edges,
+                            initial_rect: self.initial_rect,
+                        };
+                    });
+                }
+            }
+
+            fn axis(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                details: AxisFrame,
+            ) {
+                handle.axis(data, details)
+            }
+
+            fn frame(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+            ) {
+                handle.frame(data);
+            }
+
+            fn gesture_swipe_begin(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GestureSwipeBeginEvent,
+            ) {
+                handle.gesture_swipe_begin(data, event)
+            }
+
+            fn gesture_swipe_update(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GestureSwipeUpdateEvent,
+            ) {
+                handle.gesture_swipe_update(data, event)
+            }
+
+            fn gesture_swipe_end(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GestureSwipeEndEvent,
+            ) {
+                handle.gesture_swipe_end(data, event)
+            }
+
+            fn gesture_pinch_begin(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GesturePinchBeginEvent,
+            ) {
+                handle.gesture_pinch_begin(data, event)
+            }
+
+            fn gesture_pinch_update(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GesturePinchUpdateEvent,
+            ) {
+                handle.gesture_pinch_update(data, event)
+            }
+
+            fn gesture_pinch_end(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GesturePinchEndEvent,
+            ) {
+                handle.gesture_pinch_end(data, event)
+            }
+
+            fn gesture_hold_begin(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GestureHoldBeginEvent,
+            ) {
+                handle.gesture_hold_begin(data, event)
+            }
+
+            fn gesture_hold_end(
+                &mut self,
+                data: &mut AlpiniumState,
+                handle: &mut PointerInnerHandle<'_, AlpiniumState>,
+                event: &GestureHoldEndEvent,
+            ) {
+                handle.gesture_hold_end(data, event)
+            }
+
+            fn start_data(&self) -> &PointerGrabStartData<AlpiniumState> {
+                &self.start_data
+            }
+
+            fn unset(&mut self, _data: &mut AlpiniumState) {}
+        }
+
+        /// State of the resize operation.
+        ///
+        /// It is stored inside of WlSurface,
+        /// and can be accessed using [`ResizeSurfaceState::with`]
+        #[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
+        enum ResizeSurfaceState {
+            #[default]
+            Idle,
+            Resizing {
+                edges: ResizeEdge,
+                /// The initial window size and location.
+                initial_rect: Rectangle<i32, Logical>,
+            },
+            /// Resize is done, we are now waiting for last commit, to do the final move
+            WaitingForLastCommit {
+                edges: ResizeEdge,
+                /// The initial window size and location.
+                initial_rect: Rectangle<i32, Logical>,
+            },
+        }
+
+        impl ResizeSurfaceState {
+            fn with<F, T>(surface: &WlSurface, cb: F) -> T
+            where
+                F: FnOnce(&mut Self) -> T,
+            {
+                compositor::with_states(surface, |states| {
+                    states.data_map.insert_if_missing(RefCell::<Self>::default);
+                    let state = states.data_map.get::<RefCell<Self>>().unwrap();
+
+                    cb(&mut state.borrow_mut())
+                })
+            }
+
+            fn commit(&mut self) -> Option<(ResizeEdge, Rectangle<i32, Logical>)> {
+                match *self {
+                    Self::Resizing {
+                        edges,
+                        initial_rect,
+                    } => Some((edges, initial_rect)),
+                    Self::WaitingForLastCommit {
+                        edges,
+                        initial_rect,
+                    } => {
+                        // The resize is done, let's go back to idle
+                        *self = Self::Idle;
+
+                        Some((edges, initial_rect))
+                    }
+                    Self::Idle => None,
+                }
+            }
+        }
+
+        /// Should be called on `WlSurface::commit`
+        pub fn handle_commit(space: &mut Space<Window>, surface: &WlSurface) -> Option<()> {
+            let window = space
+                .elements()
+                .find(|w| w.toplevel().unwrap().wl_surface() == surface)
+                .cloned()?;
+
+            let mut window_loc = space.element_location(&window)?;
+            let geometry = window.geometry();
+
+            let new_loc: Point<Option<i32>, Logical> = ResizeSurfaceState::with(surface, |state| {
+                state
+                    .commit()
+                    .and_then(|(edges, initial_rect)| {
+                        // If the window is being resized by top or left, its location must be adjusted
+                        // accordingly.
+                        edges.intersects(ResizeEdge::TOP_LEFT).then(|| {
+                            let new_x = edges.intersects(ResizeEdge::LEFT).then_some(
+                                initial_rect.loc.x + (initial_rect.size.w - geometry.size.w),
+                            );
+
+                            let new_y = edges.intersects(ResizeEdge::TOP).then_some(
+                                initial_rect.loc.y + (initial_rect.size.h - geometry.size.h),
+                            );
+
+                            (new_x, new_y).into()
+                        })
+                    })
+                    .unwrap_or_default()
+            });
+
+            if let Some(new_x) = new_loc.x {
+                window_loc.x = new_x;
+            }
+            if let Some(new_y) = new_loc.y {
+                window_loc.y = new_y;
+            }
+
+            if new_loc.x.is_some() || new_loc.y.is_some() {
+                // If TOP or LEFT side of the window got resized, we have to move it
+                space.map_element(window, window_loc, false);
+            }
+
+            Some(())
         }
     }
-}
-
-/// Should be called on `WlSurface::commit`
-pub fn handle_commit(space: &mut Space<Window>, surface: &WlSurface) -> Option<()> {
-    let window = space
-        .elements()
-        .find(|w| w.toplevel().unwrap().wl_surface() == surface)
-        .cloned()?;
-
-    let mut window_loc = space.element_location(&window)?;
-    let geometry = window.geometry();
-
-    let new_loc: Point<Option<i32>, Logical> = ResizeSurfaceState::with(surface, |state| {
-        state
-            .commit()
-            .and_then(|(edges, initial_rect)| {
-                // If the window is being resized by top or left, its location must be adjusted
-                // accordingly.
-                edges.intersects(ResizeEdge::TOP_LEFT).then(|| {
-                    let new_x = edges
-                        .intersects(ResizeEdge::LEFT)
-                        .then_some(initial_rect.loc.x + (initial_rect.size.w - geometry.size.w));
-
-                    let new_y = edges
-                        .intersects(ResizeEdge::TOP)
-                        .then_some(initial_rect.loc.y + (initial_rect.size.h - geometry.size.h));
-
-                    (new_x, new_y).into()
-                })
-            })
-            .unwrap_or_default()
-    });
-
-    if let Some(new_x) = new_loc.x {
-        window_loc.x = new_x;
-    }
-    if let Some(new_y) = new_loc.y {
-        window_loc.y = new_y;
-    }
-
-    if new_loc.x.is_some() || new_loc.y.is_some() {
-        // If TOP or LEFT side of the window got resized, we have to move it
-        space.map_element(window, window_loc, false);
-    }
-
-    Some(())
-}
-
-}
-pub use resize_grab::ResizeSurfaceGrab;
-
+    pub use resize_grab::ResizeSurfaceGrab;
 }
 mod handlers {
-mod compositor {
-use crate::nested::{AlpiniumState, grabs::resize_grab, state::ClientState};
-use smithay::{
-    backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state},
-    reexports::wayland_server::{
-        Client,
-        protocol::{wl_buffer, wl_surface::WlSurface},
-    },
-    wayland::{
-        buffer::BufferHandler,
-        compositor::{
-            CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface,
-        },
-        shm::{ShmHandler, ShmState},
-    },
-};
+    mod compositor {
+        use crate::nested::{AlpiniumState, grabs::resize_grab, state::ClientState};
+        use smithay::{
+            backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state},
+            reexports::wayland_server::{
+                Client,
+                protocol::{wl_buffer, wl_surface::WlSurface},
+            },
+            wayland::{
+                buffer::BufferHandler,
+                compositor::{
+                    CompositorClientState, CompositorHandler, CompositorState, get_parent,
+                    is_sync_subsurface,
+                },
+                shm::{ShmHandler, ShmState},
+            },
+        };
 
-use super::xdg_shell;
+        use super::xdg_shell;
 
-impl CompositorHandler for AlpiniumState {
-    fn compositor_state(&mut self) -> &mut CompositorState {
-        &mut self.compositor_state
-    }
-
-    fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
-        &client.get_data::<ClientState>().unwrap().compositor_state
-    }
-
-    fn commit(&mut self, surface: &WlSurface) {
-        on_commit_buffer_handler::<Self>(surface);
-        if !is_sync_subsurface(surface) {
-            let mut root = surface.clone();
-            while let Some(parent) = get_parent(&root) {
-                root = parent;
+        impl CompositorHandler for AlpiniumState {
+            fn compositor_state(&mut self) -> &mut CompositorState {
+                &mut self.compositor_state
             }
-            if let Some(window) = self.window_for_surface(&root) {
-                window.on_commit();
 
-                // Only a commit on the toplevel itself changes its mapped state.
-                // Subsurface commits still update the window's bounding box above.
-                if &root == surface {
-                    if let Some(has_buffer) =
-                        with_renderer_surface_state(&root, |state| state.buffer().is_some())
-                    {
-                        self.update_window_buffer_state(&window, has_buffer);
+            fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
+                &client.get_data::<ClientState>().unwrap().compositor_state
+            }
+
+            fn commit(&mut self, surface: &WlSurface) {
+                on_commit_buffer_handler::<Self>(surface);
+                if !is_sync_subsurface(surface) {
+                    let mut root = surface.clone();
+                    while let Some(parent) = get_parent(&root) {
+                        root = parent;
                     }
+                    if let Some(window) = self.window_for_surface(&root) {
+                        window.on_commit();
+
+                        // Only a commit on the toplevel itself changes its mapped state.
+                        // Subsurface commits still update the window's bounding box above.
+                        if &root == surface {
+                            if let Some(has_buffer) =
+                                with_renderer_surface_state(&root, |state| state.buffer().is_some())
+                            {
+                                self.update_window_buffer_state(&window, has_buffer);
+                                if has_buffer {
+                                    self.start_waiting_window_animation(&window);
+                                }
+                            }
+                        }
+                    }
+                };
+
+                xdg_shell::handle_commit(&mut self.popups, &self.space, surface);
+                resize_grab::handle_commit(&mut self.space, surface);
+            }
+        }
+
+        impl BufferHandler for AlpiniumState {
+            fn buffer_destroyed(&mut self, _buffer: &wl_buffer::WlBuffer) {}
+        }
+
+        impl ShmHandler for AlpiniumState {
+            fn shm_state(&self) -> &ShmState {
+                &self.shm_state
+            }
+        }
+    }
+    mod xdg_shell {
+        use smithay::{
+            desktop::{
+                PopupKind, PopupManager, Space, Window, find_popup_root_surface,
+                get_popup_toplevel_coords,
+            },
+            input::{
+                Seat,
+                pointer::{Focus, GrabStartData as PointerGrabStartData},
+            },
+            reexports::{
+                wayland_protocols::xdg::shell::server::xdg_toplevel,
+                wayland_server::{
+                    Resource,
+                    protocol::{wl_seat, wl_surface::WlSurface},
+                },
+            },
+            utils::{Rectangle, Serial},
+            wayland::{
+                compositor::with_states,
+                shell::xdg::{
+                    PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
+                    XdgToplevelSurfaceData,
+                },
+            },
+        };
+
+        use crate::{
+            config::LayoutMode,
+            nested::{
+                AlpiniumState,
+                grabs::{MoveSurfaceGrab, ResizeSurfaceGrab},
+            },
+        };
+
+        impl XdgShellHandler for AlpiniumState {
+            fn xdg_shell_state(&mut self) -> &mut XdgShellState {
+                &mut self.xdg_shell_state
+            }
+
+            fn new_toplevel(&mut self, surface: ToplevelSurface) {
+                let window = Window::new_wayland_window(surface);
+                self.map_window(window);
+            }
+
+            fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+                self.destroy_window(surface.wl_surface());
+            }
+
+            fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
+                self.unconstrain_popup(&surface);
+                let _ = self.popups.track_popup(PopupKind::Xdg(surface));
+            }
+
+            fn reposition_request(
+                &mut self,
+                surface: PopupSurface,
+                positioner: PositionerState,
+                token: u32,
+            ) {
+                surface.with_pending_state(|state| {
+                    let geometry = positioner.get_geometry();
+                    state.geometry = geometry;
+                    state.positioner = positioner;
+                });
+                self.unconstrain_popup(&surface);
+                surface.send_repositioned(token);
+            }
+
+            fn move_request(
+                &mut self,
+                surface: ToplevelSurface,
+                seat: wl_seat::WlSeat,
+                serial: Serial,
+            ) {
+                if self.config.mode == LayoutMode::Tiling {
+                    return;
+                }
+
+                let seat = Seat::from_resource(&seat).unwrap();
+
+                let wl_surface = surface.wl_surface();
+
+                if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
+                    let pointer = seat.get_pointer().unwrap();
+
+                    let window = self
+                        .space
+                        .elements()
+                        .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
+                        .unwrap()
+                        .clone();
+                    let initial_window_location = self.space.element_location(&window).unwrap();
+
+                    let grab = MoveSurfaceGrab {
+                        start_data,
+                        window,
+                        initial_window_location,
+                    };
+
+                    pointer.set_grab(self, grab, serial, Focus::Clear);
                 }
             }
-        };
 
-        xdg_shell::handle_commit(&mut self.popups, &self.space, surface);
-        resize_grab::handle_commit(&mut self.space, surface);
-    }
-}
+            fn resize_request(
+                &mut self,
+                surface: ToplevelSurface,
+                seat: wl_seat::WlSeat,
+                serial: Serial,
+                edges: xdg_toplevel::ResizeEdge,
+            ) {
+                if self.config.mode == LayoutMode::Tiling {
+                    return;
+                }
 
-impl BufferHandler for AlpiniumState {
-    fn buffer_destroyed(&mut self, _buffer: &wl_buffer::WlBuffer) {}
-}
+                let seat = Seat::from_resource(&seat).unwrap();
 
-impl ShmHandler for AlpiniumState {
-    fn shm_state(&self) -> &ShmState {
-        &self.shm_state
-    }
-}
+                let wl_surface = surface.wl_surface();
 
-}
-mod xdg_shell {
-use smithay::{
-    desktop::{PopupKind, PopupManager, Space, Window, find_popup_root_surface, get_popup_toplevel_coords},
-    input::{
-        Seat,
-        pointer::{Focus, GrabStartData as PointerGrabStartData},
-    },
-    reexports::{
-        wayland_protocols::xdg::shell::server::xdg_toplevel,
-        wayland_server::{
-            Resource,
-            protocol::{wl_seat, wl_surface::WlSurface},
-        },
-    },
-    utils::{Rectangle, Serial},
-    wayland::{
-        compositor::with_states,
-        shell::xdg::{
-            PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
-            XdgToplevelSurfaceData,
-        },
-    },
-};
+                if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
+                    let pointer = seat.get_pointer().unwrap();
 
-use crate::{
-    config::LayoutMode,
-    nested::{
-        AlpiniumState,
-        grabs::{MoveSurfaceGrab, ResizeSurfaceGrab},
-    },
-};
+                    let window = self
+                        .space
+                        .elements()
+                        .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
+                        .unwrap()
+                        .clone();
+                    let initial_window_location = self.space.element_location(&window).unwrap();
+                    let initial_window_size = window.geometry().size;
 
-impl XdgShellHandler for AlpiniumState {
-    fn xdg_shell_state(&mut self) -> &mut XdgShellState {
-        &mut self.xdg_shell_state
-    }
+                    surface.with_pending_state(|state| {
+                        state.states.set(xdg_toplevel::State::Resizing);
+                    });
 
-    fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        let window = Window::new_wayland_window(surface);
-        self.map_window(window);
-    }
+                    surface.send_pending_configure();
 
-    fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        self.destroy_window(surface.wl_surface());
-    }
+                    let grab = ResizeSurfaceGrab::start(
+                        start_data,
+                        window,
+                        edges.into(),
+                        Rectangle::new(initial_window_location, initial_window_size),
+                    );
 
-    fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
-        self.unconstrain_popup(&surface);
-        let _ = self.popups.track_popup(PopupKind::Xdg(surface));
-    }
-
-    fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32) {
-        surface.with_pending_state(|state| {
-            let geometry = positioner.get_geometry();
-            state.geometry = geometry;
-            state.positioner = positioner;
-        });
-        self.unconstrain_popup(&surface);
-        surface.send_repositioned(token);
-    }
-
-    fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, serial: Serial) {
-        if self.config.mode == LayoutMode::Tiling {
-            return;
-        }
-
-        let seat = Seat::from_resource(&seat).unwrap();
-
-        let wl_surface = surface.wl_surface();
-
-        if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
-            let pointer = seat.get_pointer().unwrap();
-
-            let window = self
-                .space
-                .elements()
-                .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
-                .unwrap()
-                .clone();
-            let initial_window_location = self.space.element_location(&window).unwrap();
-
-            let grab = MoveSurfaceGrab {
-                start_data,
-                window,
-                initial_window_location,
-            };
-
-            pointer.set_grab(self, grab, serial, Focus::Clear);
-        }
-    }
-
-    fn resize_request(
-        &mut self,
-        surface: ToplevelSurface,
-        seat: wl_seat::WlSeat,
-        serial: Serial,
-        edges: xdg_toplevel::ResizeEdge,
-    ) {
-        if self.config.mode == LayoutMode::Tiling {
-            return;
-        }
-
-        let seat = Seat::from_resource(&seat).unwrap();
-
-        let wl_surface = surface.wl_surface();
-
-        if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
-            let pointer = seat.get_pointer().unwrap();
-
-            let window = self
-                .space
-                .elements()
-                .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
-                .unwrap()
-                .clone();
-            let initial_window_location = self.space.element_location(&window).unwrap();
-            let initial_window_size = window.geometry().size;
-
-            surface.with_pending_state(|state| {
-                state.states.set(xdg_toplevel::State::Resizing);
-            });
-
-            surface.send_pending_configure();
-
-            let grab = ResizeSurfaceGrab::start(
-                start_data,
-                window,
-                edges.into(),
-                Rectangle::new(initial_window_location, initial_window_size),
-            );
-
-            pointer.set_grab(self, grab, serial, Focus::Clear);
-        }
-    }
-
-    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
-        // TODO popup grabs
-    }
-}
-
-fn check_grab(
-    seat: &Seat<AlpiniumState>,
-    surface: &WlSurface,
-    serial: Serial,
-) -> Option<PointerGrabStartData<AlpiniumState>> {
-    let pointer = seat.get_pointer()?;
-
-    // Check that this surface has a click grab.
-    if !pointer.has_grab(serial) {
-        return None;
-    }
-
-    let start_data = pointer.grab_start_data()?;
-
-    let (focus, _) = start_data.focus.as_ref()?;
-    // If the focus was for a different surface, ignore the request.
-    if !focus.id().same_client_as(&surface.id()) {
-        return None;
-    }
-
-    Some(start_data)
-}
-
-/// Should be called on `WlSurface::commit`
-pub fn handle_commit(popups: &mut PopupManager, space: &Space<Window>, surface: &WlSurface) {
-    // Handle toplevel commits.
-    if let Some(window) = space
-        .elements()
-        .find(|w| w.toplevel().unwrap().wl_surface() == surface)
-        .cloned()
-    {
-        let initial_configure_sent = with_states(surface, |states| {
-            states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .initial_configure_sent
-        });
-
-        if !initial_configure_sent {
-            window.toplevel().unwrap().send_configure();
-        }
-    }
-
-    // Handle popup commits.
-    popups.commit(surface);
-    if let Some(popup) = popups.find_popup(surface) {
-        match popup {
-            PopupKind::Xdg(ref xdg) => {
-                if !xdg.is_initial_configure_sent() {
-                    // NOTE: This should never fail as the initial configure is always
-                    // allowed.
-                    xdg.send_configure().expect("initial configure failed");
+                    pointer.set_grab(self, grab, serial, Focus::Clear);
                 }
             }
-            PopupKind::InputMethod(ref _input_method) => {}
+
+            fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
+                // TODO popup grabs
+            }
+        }
+
+        fn check_grab(
+            seat: &Seat<AlpiniumState>,
+            surface: &WlSurface,
+            serial: Serial,
+        ) -> Option<PointerGrabStartData<AlpiniumState>> {
+            let pointer = seat.get_pointer()?;
+
+            // Check that this surface has a click grab.
+            if !pointer.has_grab(serial) {
+                return None;
+            }
+
+            let start_data = pointer.grab_start_data()?;
+
+            let (focus, _) = start_data.focus.as_ref()?;
+            // If the focus was for a different surface, ignore the request.
+            if !focus.id().same_client_as(&surface.id()) {
+                return None;
+            }
+
+            Some(start_data)
+        }
+
+        /// Should be called on `WlSurface::commit`
+        pub fn handle_commit(
+            popups: &mut PopupManager,
+            space: &Space<Window>,
+            surface: &WlSurface,
+        ) {
+            // Handle toplevel commits.
+            if let Some(window) = space
+                .elements()
+                .find(|w| w.toplevel().unwrap().wl_surface() == surface)
+                .cloned()
+            {
+                let initial_configure_sent = with_states(surface, |states| {
+                    states
+                        .data_map
+                        .get::<XdgToplevelSurfaceData>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .initial_configure_sent
+                });
+
+                if !initial_configure_sent {
+                    window.toplevel().unwrap().send_configure();
+                }
+            }
+
+            // Handle popup commits.
+            popups.commit(surface);
+            if let Some(popup) = popups.find_popup(surface) {
+                match popup {
+                    PopupKind::Xdg(ref xdg) => {
+                        if !xdg.is_initial_configure_sent() {
+                            // NOTE: This should never fail as the initial configure is always
+                            // allowed.
+                            xdg.send_configure().expect("initial configure failed");
+                        }
+                    }
+                    PopupKind::InputMethod(ref _input_method) => {}
+                }
+            }
+        }
+
+        impl AlpiniumState {
+            fn unconstrain_popup(&self, popup: &PopupSurface) {
+                let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
+                    return;
+                };
+                let Some(window) = self
+                    .space
+                    .elements()
+                    .find(|w| w.toplevel().unwrap().wl_surface() == &root)
+                else {
+                    return;
+                };
+
+                let output = self.space.outputs().next().unwrap();
+                let output_geo = self.space.output_geometry(output).unwrap();
+                let window_geo = self.space.element_geometry(window).unwrap();
+
+                // The target geometry for the positioner should be relative to its parent's geometry, so
+                // we will compute that here.
+                let mut target = output_geo;
+                target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
+                target.loc -= window_geo.loc;
+
+                popup.with_pending_state(|state| {
+                    state.geometry = state.positioner.get_unconstrained_geometry(target);
+                });
+            }
         }
     }
-}
 
-impl AlpiniumState {
-    fn unconstrain_popup(&self, popup: &PopupSurface) {
-        let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
-            return;
-        };
-        let Some(window) = self
-            .space
-            .elements()
-            .find(|w| w.toplevel().unwrap().wl_surface() == &root)
-        else {
-            return;
-        };
+    use crate::nested::AlpiniumState;
 
-        let output = self.space.outputs().next().unwrap();
-        let output_geo = self.space.output_geometry(output).unwrap();
-        let window_geo = self.space.element_geometry(window).unwrap();
+    //
+    // Wl Seat
+    //
 
-        // The target geometry for the positioner should be relative to its parent's geometry, so
-        // we will compute that here.
-        let mut target = output_geo;
-        target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
-        target.loc -= window_geo.loc;
+    use smithay::input::{Seat, SeatHandler, SeatState};
+    use smithay::reexports::wayland_server::Resource;
+    use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+    use smithay::wayland::output::OutputHandler;
+    use smithay::wayland::selection::SelectionHandler;
+    use smithay::wayland::selection::data_device::{
+        ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler,
+        set_data_device_focus,
+    };
 
-        popup.with_pending_state(|state| {
-            state.geometry = state.positioner.get_unconstrained_geometry(target);
-        });
-    }
-}
+    impl SeatHandler for AlpiniumState {
+        type KeyboardFocus = WlSurface;
+        type PointerFocus = WlSurface;
+        type TouchFocus = WlSurface;
 
-}
+        fn seat_state(&mut self) -> &mut SeatState<AlpiniumState> {
+            &mut self.seat_state
+        }
 
-use crate::nested::AlpiniumState;
+        fn cursor_image(
+            &mut self,
+            _seat: &Seat<Self>,
+            _image: smithay::input::pointer::CursorImageStatus,
+        ) {
+        }
 
-//
-// Wl Seat
-//
-
-use smithay::input::{Seat, SeatHandler, SeatState};
-use smithay::reexports::wayland_server::Resource;
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::wayland::output::OutputHandler;
-use smithay::wayland::selection::SelectionHandler;
-use smithay::wayland::selection::data_device::{
-    ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler,
-    set_data_device_focus,
-};
-
-impl SeatHandler for AlpiniumState {
-    type KeyboardFocus = WlSurface;
-    type PointerFocus = WlSurface;
-    type TouchFocus = WlSurface;
-
-    fn seat_state(&mut self) -> &mut SeatState<AlpiniumState> {
-        &mut self.seat_state
+        fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
+            let dh = &self.display_handle;
+            let client = focused.and_then(|s| dh.get_client(s.id()).ok());
+            set_data_device_focus(dh, seat, client);
+        }
     }
 
-    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: smithay::input::pointer::CursorImageStatus) {}
+    // Pointer constraints will be wired when Alpinium adds a pointer-constraints state/global.
 
-    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
-        let dh = &self.display_handle;
-        let client = focused.and_then(|s| dh.get_client(s.id()).ok());
-        set_data_device_focus(dh, seat, client);
+    //
+    // Wl Data Device
+    //
+
+    impl SelectionHandler for AlpiniumState {
+        type SelectionUserData = ();
     }
-}
 
-// Pointer constraints will be wired when Alpinium adds a pointer-constraints state/global.
-
-//
-// Wl Data Device
-//
-
-impl SelectionHandler for AlpiniumState {
-    type SelectionUserData = ();
-}
-
-impl DataDeviceHandler for AlpiniumState {
-    fn data_device_state(&self) -> &DataDeviceState {
-        &self.data_device_state
+    impl DataDeviceHandler for AlpiniumState {
+        fn data_device_state(&self) -> &DataDeviceState {
+            &self.data_device_state
+        }
     }
-}
 
-// Smithay 0.7 provides client/server DnD handling through these traits.
-// The default callbacks are sufficient for this initial nested backend.
-impl ClientDndGrabHandler for AlpiniumState {}
-impl ServerDndGrabHandler for AlpiniumState {}
+    // Smithay 0.7 provides client/server DnD handling through these traits.
+    // The default callbacks are sufficient for this initial nested backend.
+    impl ClientDndGrabHandler for AlpiniumState {}
+    impl ServerDndGrabHandler for AlpiniumState {}
 
-//
-// Wl Output & Xdg Output
-//
+    //
+    // Wl Output & Xdg Output
+    //
 
-impl OutputHandler for AlpiniumState {}
+    impl OutputHandler for AlpiniumState {}
 
-smithay::delegate_compositor!(AlpiniumState);
-smithay::delegate_data_device!(AlpiniumState);
-smithay::delegate_output!(AlpiniumState);
-smithay::delegate_seat!(AlpiniumState);
-smithay::delegate_shm!(AlpiniumState);
-smithay::delegate_xdg_shell!(AlpiniumState);
-
+    smithay::delegate_compositor!(AlpiniumState);
+    smithay::delegate_data_device!(AlpiniumState);
+    smithay::delegate_output!(AlpiniumState);
+    smithay::delegate_seat!(AlpiniumState);
+    smithay::delegate_shm!(AlpiniumState);
+    smithay::delegate_xdg_shell!(AlpiniumState);
 }
 mod input {
-use smithay::{
-    backend::input::{
-        AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
-    },
-    input::{
-        keyboard::{xkb, FilterResult},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent},
-    },
-    utils::SERIAL_COUNTER,
-};
+    use smithay::{
+        backend::input::{
+            AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
+            KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+        },
+        input::{
+            keyboard::{FilterResult, xkb},
+            pointer::{AxisFrame, ButtonEvent, MotionEvent},
+        },
+        utils::SERIAL_COUNTER,
+    };
 
-use crate::{
-    keybindings::BindingAction,
-    nested::AlpiniumState,
-};
+    use crate::{keybindings::BindingAction, nested::AlpiniumState};
 
-impl AlpiniumState {
-    pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
-        match event {
-            InputEvent::Keyboard { event, .. } => {
-                let serial = SERIAL_COUNTER.next_serial();
-                let time = Event::time_msec(&event);
-                let keycode = event.key_code();
-                let key_state = event.state();
+    impl AlpiniumState {
+        pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
+            match event {
+                InputEvent::Keyboard { event, .. } => {
+                    let serial = SERIAL_COUNTER.next_serial();
+                    let time = Event::time_msec(&event);
+                    let keycode = event.key_code();
+                    let key_state = event.state();
 
-                self.seat.get_keyboard().unwrap().input::<(), _>(
+                    self.seat.get_keyboard().unwrap().input::<(), _>(
                     self,
                     keycode,
                     key_state,
@@ -996,648 +1043,646 @@ impl AlpiniumState {
                         FilterResult::Intercept(())
                     },
                 );
-            }
-            InputEvent::PointerMotion { event, .. } => {
-                let Some(output) = self.space.outputs().next() else {
-                    return;
-                };
-                let Some(output_geo) = self.space.output_geometry(output) else {
-                    return;
-                };
+                }
+                InputEvent::PointerMotion { event, .. } => {
+                    let Some(output) = self.space.outputs().next() else {
+                        return;
+                    };
+                    let Some(output_geo) = self.space.output_geometry(output) else {
+                        return;
+                    };
 
-                let current = self.seat.get_pointer().unwrap().current_location();
-                let delta = event.delta();
-                let max_x = (output_geo.loc.x + output_geo.size.w - 1).max(output_geo.loc.x) as f64;
-                let max_y = (output_geo.loc.y + output_geo.size.h - 1).max(output_geo.loc.y) as f64;
-                let pos = smithay::utils::Point::from((
-                    (current.x + delta.x).clamp(output_geo.loc.x as f64, max_x),
-                    (current.y + delta.y).clamp(output_geo.loc.y as f64, max_y),
-                ));
-                let serial = SERIAL_COUNTER.next_serial();
-                let pointer = self.seat.get_pointer().unwrap();
-                let under = self.surface_under(pos);
-                pointer.motion(
-                    self,
-                    under,
-                    &MotionEvent {
-                        location: pos,
-                        serial,
-                        time: event.time_msec(),
-                    },
-                );
-                pointer.frame(self);
-            }
-            InputEvent::PointerMotionAbsolute { event, .. } => {
-                let Some(output) = self.space.outputs().next() else {
-                    return;
-                };
-                let Some(output_geo) = self.space.output_geometry(output) else {
-                    return;
-                };
+                    let current = self.seat.get_pointer().unwrap().current_location();
+                    let delta = event.delta();
+                    let max_x =
+                        (output_geo.loc.x + output_geo.size.w - 1).max(output_geo.loc.x) as f64;
+                    let max_y =
+                        (output_geo.loc.y + output_geo.size.h - 1).max(output_geo.loc.y) as f64;
+                    let pos = smithay::utils::Point::from((
+                        (current.x + delta.x).clamp(output_geo.loc.x as f64, max_x),
+                        (current.y + delta.y).clamp(output_geo.loc.y as f64, max_y),
+                    ));
+                    let serial = SERIAL_COUNTER.next_serial();
+                    let pointer = self.seat.get_pointer().unwrap();
+                    let under = self.surface_under(pos);
+                    pointer.motion(
+                        self,
+                        under,
+                        &MotionEvent {
+                            location: pos,
+                            serial,
+                            time: event.time_msec(),
+                        },
+                    );
+                    pointer.frame(self);
+                }
+                InputEvent::PointerMotionAbsolute { event, .. } => {
+                    let Some(output) = self.space.outputs().next() else {
+                        return;
+                    };
+                    let Some(output_geo) = self.space.output_geometry(output) else {
+                        return;
+                    };
 
-                let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
-                let serial = SERIAL_COUNTER.next_serial();
-                let pointer = self.seat.get_pointer().unwrap();
-                let under = self.surface_under(pos);
-                pointer.motion(
-                    self,
-                    under,
-                    &MotionEvent {
-                        location: pos,
-                        serial,
-                        time: event.time_msec(),
-                    },
-                );
-                pointer.frame(self);
-            }
-            InputEvent::PointerButton { event, .. } => {
-                let pointer = self.seat.get_pointer().unwrap();
+                    let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
+                    let serial = SERIAL_COUNTER.next_serial();
+                    let pointer = self.seat.get_pointer().unwrap();
+                    let under = self.surface_under(pos);
+                    pointer.motion(
+                        self,
+                        under,
+                        &MotionEvent {
+                            location: pos,
+                            serial,
+                            time: event.time_msec(),
+                        },
+                    );
+                    pointer.frame(self);
+                }
+                InputEvent::PointerButton { event, .. } => {
+                    let pointer = self.seat.get_pointer().unwrap();
 
-                let serial = SERIAL_COUNTER.next_serial();
+                    let serial = SERIAL_COUNTER.next_serial();
 
-                let button = event.button_code();
+                    let button = event.button_code();
 
-                let button_state = event.state();
+                    let button_state = event.state();
 
-                let click_target = if ButtonState::Pressed == button_state {
-                    self.window_under(pointer.current_location())
-                } else {
-                    None
-                };
-                match crate::pointer_focus::click_focus_action(
-                    ButtonState::Pressed == button_state,
-                    pointer.is_grabbed(),
-                    click_target.is_some(),
-                ) {
-                    crate::pointer_focus::ClickFocusAction::FocusWindow => {
-                        if let Some(window) = click_target.as_ref() {
-                            self.focus_window(window, serial);
+                    let click_target = if ButtonState::Pressed == button_state {
+                        self.window_under(pointer.current_location())
+                    } else {
+                        None
+                    };
+                    match crate::pointer_focus::click_focus_action(
+                        ButtonState::Pressed == button_state,
+                        pointer.is_grabbed(),
+                        click_target.is_some(),
+                    ) {
+                        crate::pointer_focus::ClickFocusAction::FocusWindow => {
+                            if let Some(window) = click_target.as_ref() {
+                                self.focus_window(window, serial);
+                            }
+                        }
+                        crate::pointer_focus::ClickFocusAction::ClearFocus => {
+                            self.clear_focus(serial)
+                        }
+                        crate::pointer_focus::ClickFocusAction::KeepCurrent => {}
+                    }
+
+                    pointer.button(
+                        self,
+                        &ButtonEvent {
+                            button,
+                            state: button_state,
+                            serial,
+                            time: event.time_msec(),
+                        },
+                    );
+                    pointer.frame(self);
+                }
+                InputEvent::PointerAxis { event, .. } => {
+                    let source = event.source();
+
+                    let horizontal_amount = event.amount(Axis::Horizontal).unwrap_or_else(|| {
+                        event.amount_v120(Axis::Horizontal).unwrap_or(0.0) * 15.0 / 120.
+                    });
+                    let vertical_amount = event.amount(Axis::Vertical).unwrap_or_else(|| {
+                        event.amount_v120(Axis::Vertical).unwrap_or(0.0) * 15.0 / 120.
+                    });
+                    let horizontal_amount_discrete = event.amount_v120(Axis::Horizontal);
+                    let vertical_amount_discrete = event.amount_v120(Axis::Vertical);
+
+                    let mut frame = AxisFrame::new(event.time_msec()).source(source);
+                    if horizontal_amount != 0.0 {
+                        frame = frame.value(Axis::Horizontal, horizontal_amount);
+                        if let Some(discrete) = horizontal_amount_discrete {
+                            frame = frame.v120(Axis::Horizontal, discrete as i32);
                         }
                     }
-                    crate::pointer_focus::ClickFocusAction::ClearFocus => self.clear_focus(serial),
-                    crate::pointer_focus::ClickFocusAction::KeepCurrent => {}
-                }
+                    if vertical_amount != 0.0 {
+                        frame = frame.value(Axis::Vertical, vertical_amount);
+                        if let Some(discrete) = vertical_amount_discrete {
+                            frame = frame.v120(Axis::Vertical, discrete as i32);
+                        }
+                    }
 
-                pointer.button(
-                    self,
-                    &ButtonEvent {
-                        button,
-                        state: button_state,
-                        serial,
-                        time: event.time_msec(),
-                    },
-                );
-                pointer.frame(self);
+                    if source == AxisSource::Finger {
+                        if event.amount(Axis::Horizontal) == Some(0.0) {
+                            frame = frame.stop(Axis::Horizontal);
+                        }
+                        if event.amount(Axis::Vertical) == Some(0.0) {
+                            frame = frame.stop(Axis::Vertical);
+                        }
+                    }
+
+                    let pointer = self.seat.get_pointer().unwrap();
+                    pointer.axis(self, frame);
+                    pointer.frame(self);
+                }
+                _ => {}
             }
-            InputEvent::PointerAxis { event, .. } => {
-                let source = event.source();
-
-                let horizontal_amount = event
-                    .amount(Axis::Horizontal)
-                    .unwrap_or_else(|| event.amount_v120(Axis::Horizontal).unwrap_or(0.0) * 15.0 / 120.);
-                let vertical_amount = event
-                    .amount(Axis::Vertical)
-                    .unwrap_or_else(|| event.amount_v120(Axis::Vertical).unwrap_or(0.0) * 15.0 / 120.);
-                let horizontal_amount_discrete = event.amount_v120(Axis::Horizontal);
-                let vertical_amount_discrete = event.amount_v120(Axis::Vertical);
-
-                let mut frame = AxisFrame::new(event.time_msec()).source(source);
-                if horizontal_amount != 0.0 {
-                    frame = frame.value(Axis::Horizontal, horizontal_amount);
-                    if let Some(discrete) = horizontal_amount_discrete {
-                        frame = frame.v120(Axis::Horizontal, discrete as i32);
-                    }
-                }
-                if vertical_amount != 0.0 {
-                    frame = frame.value(Axis::Vertical, vertical_amount);
-                    if let Some(discrete) = vertical_amount_discrete {
-                        frame = frame.v120(Axis::Vertical, discrete as i32);
-                    }
-                }
-
-                if source == AxisSource::Finger {
-                    if event.amount(Axis::Horizontal) == Some(0.0) {
-                        frame = frame.stop(Axis::Horizontal);
-                    }
-                    if event.amount(Axis::Vertical) == Some(0.0) {
-                        frame = frame.stop(Axis::Vertical);
-                    }
-                }
-
-                let pointer = self.seat.get_pointer().unwrap();
-                pointer.axis(self, frame);
-                pointer.frame(self);
-            }
-            _ => {}
         }
     }
-}
-
 }
 mod state {
-use std::{ffi::OsString, sync::Arc, time::{Duration, Instant}};
-use crate::{
-    animation::{AnimationRect, GeometryAnimation},
-    config::{Config, LayoutMode},
-    layout::{LayoutRect, master_stack_layout},
-};
+    use crate::{
+        animation::{AnimationRect, GeometryAnimation},
+        config::{Config, LayoutMode},
+        layout::{LayoutRect, master_stack_layout},
+    };
+    use std::{
+        ffi::OsString,
+        sync::Arc,
+        time::{Duration, Instant},
+    };
 
-use smithay::{
-    desktop::{PopupManager, Space, Window, WindowSurfaceType},
-    input::{Seat, SeatState},
-    reexports::{
-        calloop::{EventLoop, Interest, LoopSignal, Mode, PostAction, generic::Generic},
-        wayland_server::{
-            Display, DisplayHandle,
-            backend::{ClientData, ClientId, DisconnectReason},
-            protocol::wl_surface::WlSurface,
+    use smithay::{
+        desktop::{PopupManager, Space, Window, WindowSurfaceType},
+        input::{Seat, SeatState},
+        reexports::{
+            calloop::{EventLoop, Interest, LoopSignal, Mode, PostAction, generic::Generic},
+            wayland_server::{
+                Display, DisplayHandle,
+                backend::{ClientData, ClientId, DisconnectReason},
+                protocol::wl_surface::WlSurface,
+            },
         },
-    },
-    utils::{Logical, Point, SERIAL_COUNTER},
-    wayland::{
-        compositor::{CompositorClientState, CompositorState},
-        output::OutputManagerState,
-        selection::data_device::DataDeviceState,
-        shell::xdg::XdgShellState,
-        shm::ShmState,
-        socket::ListeningSocketSource,
-    },
-};
+        utils::{Logical, Point, SERIAL_COUNTER},
+        wayland::{
+            compositor::{CompositorClientState, CompositorState},
+            output::OutputManagerState,
+            selection::data_device::DataDeviceState,
+            shell::xdg::XdgShellState,
+            shm::ShmState,
+            socket::ListeningSocketSource,
+        },
+    };
 
-struct WindowAnimation {
-    window: Window,
-    geometry: GeometryAnimation,
-    configure_sent: bool,
-}
-
-pub struct AlpiniumState {
-    pub config: Config,
-    pub start_time: std::time::Instant,
-    pub socket_name: OsString,
-    pub display_handle: DisplayHandle,
-
-    pub space: Space<Window>,
-    /// Stable order of all live toplevels, including temporarily unmapped ones.
-    window_order: Vec<Window>,
-    /// Toplevels whose current surface commit has an attached renderer buffer.
-    buffer_attached_windows: Vec<Window>,
-    /// Last position retained while a toplevel is unmapped.
-    unmapped_window_locations: Vec<(Window, Point<i32, Logical>)>,
-    /// Last focused window, retained while the host window is unfocused.
-    focused_window: Option<Window>,
-    /// Whether the nested Winit host currently owns keyboard focus.
-    host_focused: bool,
-    /// Active move/resize transitions, including completed size transitions
-    /// waiting for the client to commit the final configure.
-    window_animations: Vec<WindowAnimation>,
-    /// Windows that should appear immediately rather than animate on first map.
-    newly_mapped_windows: Vec<Window>,
-    pub loop_signal: LoopSignal,
-
-    // Smithay State
-    pub compositor_state: CompositorState,
-    pub xdg_shell_state: XdgShellState,
-    pub shm_state: ShmState,
-    // Keep the xdg-output global registered for the compositor's lifetime.
-    _output_manager_state: OutputManagerState,
-    pub seat_state: SeatState<AlpiniumState>,
-    pub data_device_state: DataDeviceState,
-    pub popups: PopupManager,
-
-    pub seat: Seat<Self>,
-}
-
-impl AlpiniumState {
-    /// Return mapped windows in stable creation order.
-    fn ordered_windows(&self) -> Vec<Window> {
-        let mapped: Vec<Window> = self.space.elements().cloned().collect();
-        self.window_order
-            .iter()
-            .filter(|window| mapped.contains(window))
-            .cloned()
-            .collect()
+    struct WindowAnimation {
+        window: Window,
+        geometry: GeometryAnimation,
+        waiting_for_client: bool,
     }
 
-    /// Find a live tracked toplevel by its root wl_surface.
-    pub fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
-        self.window_order
-            .iter()
-            .find(|window| {
-                window
-                    .toplevel()
-                    .is_some_and(|toplevel| toplevel.wl_surface() == surface)
-            })
-            .cloned()
+    pub struct AlpiniumState {
+        pub config: Config,
+        pub start_time: std::time::Instant,
+        pub socket_name: OsString,
+        pub display_handle: DisplayHandle,
+
+        pub space: Space<Window>,
+        /// Stable order of all live toplevels, including temporarily unmapped ones.
+        window_order: Vec<Window>,
+        /// Toplevels whose current surface commit has an attached renderer buffer.
+        buffer_attached_windows: Vec<Window>,
+        /// Last position retained while a toplevel is unmapped.
+        unmapped_window_locations: Vec<(Window, Point<i32, Logical>)>,
+        /// Last focused window, retained while the host window is unfocused.
+        focused_window: Option<Window>,
+        /// Whether the nested Winit host currently owns keyboard focus.
+        host_focused: bool,
+        /// Active move/resize transitions, including completed size transitions
+        /// waiting for the client to commit the final configure.
+        window_animations: Vec<WindowAnimation>,
+        /// Windows that should appear immediately rather than animate on first map.
+        newly_mapped_windows: Vec<Window>,
+        pub loop_signal: LoopSignal,
+
+        // Smithay State
+        pub compositor_state: CompositorState,
+        pub xdg_shell_state: XdgShellState,
+        pub shm_state: ShmState,
+        // Keep the xdg-output global registered for the compositor's lifetime.
+        _output_manager_state: OutputManagerState,
+        pub seat_state: SeatState<AlpiniumState>,
+        pub data_device_state: DataDeviceState,
+        pub popups: PopupManager,
+
+        pub seat: Seat<Self>,
     }
 
-    /// Keep keyboard focus valid when its current window disappears from the space.
-    fn recover_focus_after_removal(&mut self, removed_was_focused: bool) {
-        if !removed_was_focused {
-            return;
+    impl AlpiniumState {
+        /// Return mapped windows in stable creation order.
+        fn ordered_windows(&self) -> Vec<Window> {
+            let mapped: Vec<Window> = self.space.elements().cloned().collect();
+            self.window_order
+                .iter()
+                .filter(|window| mapped.contains(window))
+                .cloned()
+                .collect()
         }
 
-        self.focused_window = None;
-        self.focus_relative(false);
-        if self.focused_window.is_none() {
-            self.clear_focus(SERIAL_COUNTER.next_serial());
+        /// Find a live tracked toplevel by its root wl_surface.
+        pub fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
+            self.window_order
+                .iter()
+                .find(|window| {
+                    window
+                        .toplevel()
+                        .is_some_and(|toplevel| toplevel.wl_surface() == surface)
+                })
+                .cloned()
         }
-    }
 
-    /// Remove a temporarily-unmapped toplevel from the visible space.
-    fn unmap_window(&mut self, window: &Window) {
-        self.window_animations.retain(|animation| animation.window != *window);
-        self.newly_mapped_windows.retain(|mapped| mapped != window);
-        if let Some(location) = self.space.element_location(window) {
-            if let Some((_, saved_location)) = self
-                .unmapped_window_locations
-                .iter_mut()
-                .find(|(saved, _)| saved == window)
-            {
-                *saved_location = location;
-            } else {
-                self.unmapped_window_locations.push((window.clone(), location));
+        /// Keep keyboard focus valid when its current window disappears from the space.
+        fn recover_focus_after_removal(&mut self, removed_was_focused: bool) {
+            if !removed_was_focused {
+                return;
+            }
+
+            self.focused_window = None;
+            self.focus_relative(false);
+            if self.focused_window.is_none() {
+                self.clear_focus(SERIAL_COUNTER.next_serial());
             }
         }
 
-        let was_focused = self.focused_window.as_ref() == Some(window);
-        window.set_activated(false);
-        self.space.unmap_elem(window);
-        self.recover_focus_after_removal(was_focused);
-        self.apply_layout();
+        /// Remove a temporarily-unmapped toplevel from the visible space.
+        fn unmap_window(&mut self, window: &Window) {
+            self.window_animations
+                .retain(|animation| animation.window != *window);
+            self.newly_mapped_windows.retain(|mapped| mapped != window);
+            if let Some(location) = self.space.element_location(window) {
+                if let Some((_, saved_location)) = self
+                    .unmapped_window_locations
+                    .iter_mut()
+                    .find(|(saved, _)| saved == window)
+                {
+                    *saved_location = location;
+                } else {
+                    self.unmapped_window_locations
+                        .push((window.clone(), location));
+                }
+            }
 
-    }
+            let was_focused = self.focused_window.as_ref() == Some(window);
+            window.set_activated(false);
+            self.space.unmap_elem(window);
+            self.recover_focus_after_removal(was_focused);
+            self.apply_layout();
+        }
 
-    /// Track a buffer attach/detach transition for a known toplevel.
-    pub fn update_window_buffer_state(&mut self, window: &Window, has_buffer: bool) {
-        let was_attached = self.buffer_attached_windows.contains(window);
-        match crate::window_lifecycle::buffer_transition(was_attached, has_buffer) {
-            crate::window_lifecycle::BufferTransition::Unchanged => {
-                // After an unmap, XDG requires another bufferless commit before
-                // the compositor sends the configure that permits the next map.
-                if !has_buffer {
-                    if let Some(toplevel) = window.toplevel() {
-                        if !toplevel.is_initial_configure_sent() {
+        /// Track a buffer attach/detach transition for a known toplevel.
+        pub fn update_window_buffer_state(&mut self, window: &Window, has_buffer: bool) {
+            let was_attached = self.buffer_attached_windows.contains(window);
+            match crate::window_lifecycle::buffer_transition(was_attached, has_buffer) {
+                crate::window_lifecycle::BufferTransition::Unchanged => {
+                    // After an unmap, XDG requires another bufferless commit before
+                    // the compositor sends the configure that permits the next map.
+                    if !has_buffer {
+                        if let Some(toplevel) = window.toplevel() {
+                            if !toplevel.is_initial_configure_sent() {
+                                toplevel.send_pending_configure();
+                            }
+                        }
+                    }
+                }
+                crate::window_lifecycle::BufferTransition::Attached => {
+                    self.buffer_attached_windows.push(window.clone());
+                    self.newly_mapped_windows.push(window.clone());
+
+                    let already_mapped = self.space.elements().any(|mapped| mapped == window);
+                    if !already_mapped {
+                        let location = self
+                            .unmapped_window_locations
+                            .iter()
+                            .find(|(saved, _)| saved == window)
+                            .map(|(_, location)| *location)
+                            .unwrap_or_else(|| Point::from((0, 0)));
+                        self.unmapped_window_locations
+                            .retain(|(saved, _)| saved != window);
+                        self.space.map_element(window.clone(), location, false);
+                        self.apply_layout();
+
+                        if self.focused_window.is_none() {
+                            self.focus_window(window, SERIAL_COUNTER.next_serial());
+                        } else if let Some(toplevel) = window.toplevel() {
                             toplevel.send_pending_configure();
                         }
                     }
                 }
-            }
-            crate::window_lifecycle::BufferTransition::Attached => {
-                self.buffer_attached_windows.push(window.clone());
-                self.newly_mapped_windows.push(window.clone());
+                crate::window_lifecycle::BufferTransition::Detached => {
+                    self.buffer_attached_windows
+                        .retain(|attached| attached != window);
 
-                let already_mapped = self.space.elements().any(|mapped| mapped == window);
-                if !already_mapped {
-                    let location = self
-                        .unmapped_window_locations
-                        .iter()
-                        .find(|(saved, _)| saved == window)
-                        .map(|(_, location)| *location)
-                        .unwrap_or_else(|| Point::from((0, 0)));
-                    self.unmapped_window_locations
-                        .retain(|(saved, _)| saved != window);
-                    self.space.map_element(window.clone(), location, false);
-                    self.apply_layout();
-
-                    if self.focused_window.is_none() {
-                        self.focus_window(window, SERIAL_COUNTER.next_serial());
-                    } else if let Some(toplevel) = window.toplevel() {
-                        toplevel.send_pending_configure();
+                    // The XDG role post-commit hook runs before this handler updates
+                    // Smithay's renderer buffer state. Reset explicitly now that the
+                    // detach has been observed so the next bufferless commit can
+                    // trigger the required fresh initial configure.
+                    if let Some(toplevel) = window.toplevel() {
+                        toplevel.reset_initial_configure_sent();
                     }
+
+                    self.unmap_window(window);
                 }
             }
-            crate::window_lifecycle::BufferTransition::Detached => {
-                self.buffer_attached_windows
-                    .retain(|attached| attached != window);
-
-                // The XDG role post-commit hook runs before this handler updates
-                // Smithay's renderer buffer state. Reset explicitly now that the
-                // detach has been observed so the next bufferless commit can
-                // trigger the required fresh initial configure.
-                if let Some(toplevel) = window.toplevel() {
-                    toplevel.reset_initial_configure_sent();
-                }
-
-                self.unmap_window(window);
-            }
-        }
-    }
-
-    /// Remove a destroyed toplevel permanently from compositor tracking.
-    pub fn destroy_window(&mut self, surface: &WlSurface) {
-        let Some(window) = self.window_for_surface(surface) else {
-            return;
-        };
-
-        self.window_animations.retain(|animation| animation.window != window);
-        self.newly_mapped_windows.retain(|mapped| mapped != &window);
-        self.window_order.retain(|tracked| tracked != &window);
-        self.buffer_attached_windows
-            .retain(|attached| attached != &window);
-        self.unmapped_window_locations
-            .retain(|(saved, _)| saved != &window);
-
-        let was_focused = self.focused_window.as_ref() == Some(&window);
-        self.space.unmap_elem(&window);
-        self.recover_focus_after_removal(was_focused);
-        self.apply_layout();
-    }
-
-    /// Focus and raise a mapped toplevel without changing its master/stack order.
-    pub fn focus_window(&mut self, window: &Window, serial: smithay::utils::Serial) {
-        if !self.space.elements().any(|mapped| mapped == window) {
-            return;
         }
 
-        if let Some(previous) = self.focused_window.as_ref() {
-            if previous != window {
-                previous.set_activated(false);
-            }
-        }
-        window.set_activated(self.host_focused);
-        self.space.raise_element(window, true);
-        self.focused_window = Some(window.clone());
-
-        let surface = if self.host_focused {
-            window.toplevel().map(|toplevel| toplevel.wl_surface().clone())
-        } else {
-            None
-        };
-        let keyboard = self.seat.get_keyboard().unwrap();
-        keyboard.set_focus(self, surface, serial);
-
-        self.space.elements().for_each(|window| {
-            if let Some(toplevel) = window.toplevel() {
-                toplevel.send_pending_configure();
-            }
-        });
-    }
-
-    /// Clear keyboard focus and deactivate all mapped toplevels.
-    pub fn clear_focus(&mut self, serial: smithay::utils::Serial) {
-        self.focused_window = None;
-        self.space.elements().for_each(|window| {
-            window.set_activated(false);
-            if let Some(toplevel) = window.toplevel() {
-                toplevel.send_pending_configure();
-            }
-        });
-
-        let keyboard = self.seat.get_keyboard().unwrap();
-        keyboard.set_focus(self, None, serial);
-    }
-
-    /// Focus the next or previous mapped window in creation order.
-    pub fn focus_relative(&mut self, backwards: bool) {
-        let windows = self.ordered_windows();
-        if windows.is_empty() {
-            return;
-        }
-
-        let current_index = self
-            .focused_window
-            .as_ref()
-            .and_then(|focused| windows.iter().position(|window| window == focused));
-
-        let next_index = match current_index {
-            Some(index) if backwards => (index + windows.len() - 1) % windows.len(),
-            Some(index) => (index + 1) % windows.len(),
-            None => 0,
-        };
-
-        self.focus_window(&windows[next_index], SERIAL_COUNTER.next_serial());
-    }
-
-    /// Ask the focused Wayland client to close, then move focus to another window.
-    ///
-    /// Wayland clients decide whether and when to honor the close request; this
-    /// does not forcibly terminate the application.
-    pub fn close_focused_window(&mut self) {
-        let windows = self.ordered_windows();
-        let Some(index) = self
-            .focused_window
-            .as_ref()
-            .and_then(|focused| windows.iter().position(|window| window == focused))
-        else {
-            return;
-        };
-
-        if let Some(toplevel) = windows[index].toplevel() {
-            toplevel.send_close();
-        }
-
-        if windows.len() > 1 {
-            self.focus_window(&windows[(index + 1) % windows.len()], SERIAL_COUNTER.next_serial());
-        } else {
-            self.clear_focus(SERIAL_COUNTER.next_serial());
-        }
-    }
-
-    /// Keep keyboard focus in sync with the host Winit window.
-    pub fn handle_host_focus(&mut self, focused: bool) {
-        self.host_focused = focused;
-        let window = if focused {
-            self.focused_window
-                .as_ref()
-                .filter(|window| self.space.elements().any(|mapped| mapped == *window))
-                .cloned()
-        } else {
-            None
-        };
-
-        self.space.elements().for_each(|candidate| {
-            candidate.set_activated(window.as_ref() == Some(candidate));
-            if let Some(toplevel) = candidate.toplevel() {
-                toplevel.send_pending_configure();
-            }
-        });
-
-        let surface = window.and_then(|window| {
-            window.toplevel().map(|toplevel| toplevel.wl_surface().clone())
-        });
-        let keyboard = self.seat.get_keyboard().unwrap();
-        keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
-    }
-
-    /// Add a newly-created toplevel, focus it, and apply the active layout policy.
-    pub fn map_window(&mut self, window: Window) {
-        self.window_order.push(window.clone());
-        self.newly_mapped_windows.push(window.clone());
-        self.space.map_element(window.clone(), (0, 0), false);
-        self.focus_window(&window, SERIAL_COUNTER.next_serial());
-        self.apply_layout();
-    }
-
-    /// Reconcile mapped windows with the configured layout, starting or retargeting
-    /// geometry transitions when the layout changes.
-    pub fn apply_layout(&mut self) {
-        let windows = self.ordered_windows();
-        if self.focused_window.as_ref().is_some_and(|focused| !windows.contains(focused)) {
-            self.focused_window = None;
-        }
-
-        if self.config.mode != LayoutMode::Tiling || windows.is_empty() {
-            self.newly_mapped_windows.clear();
-            return;
-        }
-
-        let Some(output) = self.space.outputs().next().cloned() else {
-            self.newly_mapped_windows.clear();
-            return;
-        };
-        let Some(output_geometry) = self.space.output_geometry(&output) else {
-            self.newly_mapped_windows.clear();
-            return;
-        };
-
-        let area = LayoutRect::new(
-            output_geometry.loc.x,
-            output_geometry.loc.y,
-            output_geometry.size.w,
-            output_geometry.size.h,
-        );
-        let placements = master_stack_layout(
-            area,
-            windows.len(),
-            self.config.outer_gap,
-            self.config.inner_gap,
-        );
-        let now = Instant::now();
-
-        for (window, placement) in windows.into_iter().zip(placements) {
-            let target = AnimationRect::new(
-                f64::from(placement.x),
-                f64::from(placement.y),
-                f64::from(placement.width),
-                f64::from(placement.height),
-            );
-            let is_new_window = self.newly_mapped_windows.contains(&window)
-                || !self.buffer_attached_windows.contains(&window);
-            let animation_index = self
-                .window_animations
-                .iter()
-                .position(|animation| animation.window == window);
-
-            if let Some(index) = animation_index {
-                if self.window_animations[index].geometry.to.approximately_eq(target) {
-                    continue;
-                }
-            }
-
-            let current = if let Some(index) = animation_index {
-                self.window_animations[index].geometry.sample(now)
-            } else {
-                let location = self.space.element_location(&window).unwrap_or_else(|| {
-                    Point::from((placement.x, placement.y))
-                });
-                let size = window.geometry().size;
-                AnimationRect::new(
-                    f64::from(location.x),
-                    f64::from(location.y),
-                    f64::from(size.w),
-                    f64::from(size.h),
-                )
+        /// Remove a destroyed toplevel permanently from compositor tracking.
+        pub fn destroy_window(&mut self, surface: &WlSurface) {
+            let Some(window) = self.window_for_surface(surface) else {
+                return;
             };
 
-            let mut from = current;
-            if !self.config.window_move_animation {
-                from.x = target.x;
-                from.y = target.y;
+            self.window_animations
+                .retain(|animation| animation.window != window);
+            self.newly_mapped_windows.retain(|mapped| mapped != &window);
+            self.window_order.retain(|tracked| tracked != &window);
+            self.buffer_attached_windows
+                .retain(|attached| attached != &window);
+            self.unmapped_window_locations
+                .retain(|(saved, _)| saved != &window);
+
+            let was_focused = self.focused_window.as_ref() == Some(&window);
+            self.space.unmap_elem(&window);
+            self.recover_focus_after_removal(was_focused);
+            self.apply_layout();
+        }
+
+        /// Focus and raise a mapped toplevel without changing its master/stack order.
+        pub fn focus_window(&mut self, window: &Window, serial: smithay::utils::Serial) {
+            if !self.space.elements().any(|mapped| mapped == window) {
+                return;
             }
-            if !self.config.window_resize_animation {
-                from.width = target.width;
-                from.height = target.height;
-            }
 
-            let should_animate = self.config.animations
-                && !is_new_window
-                && self.config.animation_duration_ms > 0
-                && !from.approximately_eq(target);
-
-            if should_animate {
-                let geometry = GeometryAnimation::new(
-                    from,
-                    target,
-                    now,
-                    Duration::from_millis(u64::from(self.config.animation_duration_ms)),
-                    self.config.animation_curve,
-                );
-                let animation = WindowAnimation {
-                    window: window.clone(),
-                    geometry,
-                    configure_sent: false,
-                };
-
-                if let Some(index) = animation_index {
-                    self.window_animations[index] = animation;
-                } else {
-                    self.window_animations.push(animation);
+            if let Some(previous) = self.focused_window.as_ref() {
+                if previous != window {
+                    previous.set_activated(false);
                 }
-
-                continue;
             }
+            window.set_activated(self.host_focused);
+            self.space.raise_element(window, true);
+            self.focused_window = Some(window.clone());
 
-            if let Some(index) = animation_index {
-                self.window_animations.remove(index);
-            }
+            let surface = if self.host_focused {
+                window
+                    .toplevel()
+                    .map(|toplevel| toplevel.wl_surface().clone())
+            } else {
+                None
+            };
+            let keyboard = self.seat.get_keyboard().unwrap();
+            keyboard.set_focus(self, surface, serial);
 
-            let location = Point::from((placement.x, placement.y));
-            if self.space.element_location(&window) != Some(location) {
-                self.space.map_element(window.clone(), location, false);
-            }
-
-            if let Some(toplevel) = window.toplevel() {
-                let target_size = (placement.width, placement.height).into();
-                let size_changed = toplevel.with_pending_state(|state| {
-                    if state.size != Some(target_size) {
-                        state.size = Some(target_size);
-                        true
-                    } else {
-                        false
-                    }
-                });
-                if size_changed {
+            self.space.elements().for_each(|window| {
+                if let Some(toplevel) = window.toplevel() {
                     toplevel.send_pending_configure();
                 }
+            });
+        }
+
+        /// Clear keyboard focus and deactivate all mapped toplevels.
+        pub fn clear_focus(&mut self, serial: smithay::utils::Serial) {
+            self.focused_window = None;
+            self.space.elements().for_each(|window| {
+                window.set_activated(false);
+                if let Some(toplevel) = window.toplevel() {
+                    toplevel.send_pending_configure();
+                }
+            });
+
+            let keyboard = self.seat.get_keyboard().unwrap();
+            keyboard.set_focus(self, None, serial);
+        }
+
+        /// Focus the next or previous mapped window in creation order.
+        pub fn focus_relative(&mut self, backwards: bool) {
+            let windows = self.ordered_windows();
+            if windows.is_empty() {
+                return;
+            }
+
+            let current_index = self
+                .focused_window
+                .as_ref()
+                .and_then(|focused| windows.iter().position(|window| window == focused));
+
+            let next_index = match current_index {
+                Some(index) if backwards => (index + windows.len() - 1) % windows.len(),
+                Some(index) => (index + 1) % windows.len(),
+                None => 0,
+            };
+
+            self.focus_window(&windows[next_index], SERIAL_COUNTER.next_serial());
+        }
+
+        /// Ask the focused Wayland client to close, then move focus to another window.
+        ///
+        /// Wayland clients decide whether and when to honor the close request; this
+        /// does not forcibly terminate the application.
+        pub fn close_focused_window(&mut self) {
+            let windows = self.ordered_windows();
+            let Some(index) = self
+                .focused_window
+                .as_ref()
+                .and_then(|focused| windows.iter().position(|window| window == focused))
+            else {
+                return;
+            };
+
+            if let Some(toplevel) = windows[index].toplevel() {
+                toplevel.send_close();
+            }
+
+            if windows.len() > 1 {
+                self.focus_window(
+                    &windows[(index + 1) % windows.len()],
+                    SERIAL_COUNTER.next_serial(),
+                );
+            } else {
+                self.clear_focus(SERIAL_COUNTER.next_serial());
             }
         }
 
-        self.newly_mapped_windows.clear();
-    }
+        /// Keep keyboard focus in sync with the host Winit window.
+        pub fn handle_host_focus(&mut self, focused: bool) {
+            self.host_focused = focused;
+            let window = if focused {
+                self.focused_window
+                    .as_ref()
+                    .filter(|window| self.space.elements().any(|mapped| mapped == *window))
+                    .cloned()
+            } else {
+                None
+            };
 
-    /// Advance geometry transitions and send each final client resize configure
-    /// only once, after its visual interpolation has completed.
-    pub fn advance_animations(&mut self, now: Instant) {
-        let snapshots: Vec<(Window, AnimationRect, bool, bool)> = self
-            .window_animations
-            .iter()
-            .map(|animation| (
-                animation.window.clone(),
-                animation.geometry.to,
-                animation.geometry.is_finished(now),
-                animation.configure_sent,
-            ))
-            .collect();
+            self.space.elements().for_each(|candidate| {
+                candidate.set_activated(window.as_ref() == Some(candidate));
+                if let Some(toplevel) = candidate.toplevel() {
+                    toplevel.send_pending_configure();
+                }
+            });
 
-        let mut remove = Vec::new();
-        for (window, target, finished, configure_sent) in snapshots {
-            if !self.space.elements().any(|mapped| mapped == &window) {
-                remove.push(window);
-                continue;
+            let surface = window.and_then(|window| {
+                window
+                    .toplevel()
+                    .map(|toplevel| toplevel.wl_surface().clone())
+            });
+            let keyboard = self.seat.get_keyboard().unwrap();
+            keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
+        }
+
+        /// Add a newly-created toplevel, focus it, and apply the active layout policy.
+        pub fn map_window(&mut self, window: Window) {
+            self.window_order.push(window.clone());
+            self.newly_mapped_windows.push(window.clone());
+            self.space.map_element(window.clone(), (0, 0), false);
+            self.focus_window(&window, SERIAL_COUNTER.next_serial());
+            self.apply_layout();
+        }
+
+        /// Reconcile mapped windows with the configured layout, starting or retargeting
+        /// geometry transitions when the layout changes.
+        pub fn apply_layout(&mut self) {
+            let windows = self.ordered_windows();
+            if self
+                .focused_window
+                .as_ref()
+                .is_some_and(|focused| !windows.contains(focused))
+            {
+                self.focused_window = None;
             }
 
-            if finished && !configure_sent {
-                let target_size = {
-                    let animation = self.window_animations.iter()
-                        .find(|animation| animation.window == window)
-                        .expect("active window animation must still exist");
-                    (
-                        animation.geometry.to.width.round() as i32,
-                        animation.geometry.to.height.round() as i32,
-                    ).into()
+            if self.config.mode != LayoutMode::Tiling || windows.is_empty() {
+                self.newly_mapped_windows.clear();
+                return;
+            }
+
+            let Some(output) = self.space.outputs().next().cloned() else {
+                self.newly_mapped_windows.clear();
+                return;
+            };
+            let Some(output_geometry) = self.space.output_geometry(&output) else {
+                self.newly_mapped_windows.clear();
+                return;
+            };
+
+            let area = LayoutRect::new(
+                output_geometry.loc.x,
+                output_geometry.loc.y,
+                output_geometry.size.w,
+                output_geometry.size.h,
+            );
+            let placements = master_stack_layout(
+                area,
+                windows.len(),
+                self.config.outer_gap,
+                self.config.inner_gap,
+            );
+            let now = Instant::now();
+
+            for (window, placement) in windows.into_iter().zip(placements) {
+                let target = AnimationRect::new(
+                    f64::from(placement.x),
+                    f64::from(placement.y),
+                    f64::from(placement.width),
+                    f64::from(placement.height),
+                );
+                let is_new_window = self.newly_mapped_windows.contains(&window)
+                    || !self.buffer_attached_windows.contains(&window);
+                let animation_index = self
+                    .window_animations
+                    .iter()
+                    .position(|animation| animation.window == window);
+
+                if let Some(index) = animation_index {
+                    if self.window_animations[index]
+                        .geometry
+                        .to
+                        .approximately_eq(target)
+                    {
+                        continue;
+                    }
+                }
+
+                let current = if let Some(index) = animation_index {
+                    if self.window_animations[index].waiting_for_client {
+                        self.window_animations[index].geometry.start_rect()
+                    } else {
+                        self.window_animations[index].geometry.sample(now)
+                    }
+                } else {
+                    let location = self
+                        .space
+                        .element_location(&window)
+                        .unwrap_or_else(|| Point::from((placement.x, placement.y)));
+                    let size = window.geometry().size;
+                    AnimationRect::new(
+                        f64::from(location.x),
+                        f64::from(location.y),
+                        f64::from(size.w),
+                        f64::from(size.h),
+                    )
                 };
 
+                let mut from = current;
+                if !self.config.window_move_animation {
+                    from.x = target.x;
+                    from.y = target.y;
+                }
+                if !self.config.window_resize_animation {
+                    from.width = target.width;
+                    from.height = target.height;
+                }
+
+                let should_animate = self.config.animations
+                    && !is_new_window
+                    && self.config.animation_duration_ms > 0
+                    && !from.approximately_eq(target);
+
+                if should_animate {
+                    let target_size = (placement.width, placement.height).into();
+                    let mut waiting_for_client = false;
+                    if let Some(toplevel) = window.toplevel() {
+                        let size_changed = toplevel.with_pending_state(|state| {
+                            if state.size != Some(target_size) {
+                                state.size = Some(target_size);
+                                true
+                            } else {
+                                false
+                            }
+                        });
+                        if size_changed {
+                            toplevel.send_pending_configure();
+                        }
+                        let current_size = window.geometry().size;
+                        waiting_for_client =
+                            current_size.w != placement.width || current_size.h != placement.height;
+                    }
+
+                    let geometry = GeometryAnimation::new(
+                        from,
+                        target,
+                        now,
+                        Duration::from_millis(u64::from(self.config.animation_duration_ms)),
+                        self.config.animation_curve,
+                    );
+                    let animation = WindowAnimation {
+                        window: window.clone(),
+                        geometry,
+                        waiting_for_client,
+                    };
+
+                    if let Some(index) = animation_index {
+                        self.window_animations[index] = animation;
+                    } else {
+                        self.window_animations.push(animation);
+                    }
+
+                    continue;
+                }
+
+                if let Some(index) = animation_index {
+                    self.window_animations.remove(index);
+                }
+
+                let location = Point::from((placement.x, placement.y));
+                if self.space.element_location(&window) != Some(location) {
+                    self.space.map_element(window.clone(), location, false);
+                }
+
                 if let Some(toplevel) = window.toplevel() {
+                    let target_size = (placement.width, placement.height).into();
                     let size_changed = toplevel.with_pending_state(|state| {
                         if state.size != Some(target_size) {
                             state.size = Some(target_size);
@@ -1650,357 +1695,434 @@ impl AlpiniumState {
                         toplevel.send_pending_configure();
                     }
                 }
+            }
 
-                if let Some(animation) = self.window_animations.iter_mut()
-                    .find(|animation| animation.window == window)
-                {
-                    animation.configure_sent = true;
+            self.newly_mapped_windows.clear();
+        }
+
+        /// Advance geometry transitions and send each final client resize configure
+        /// only once, after its visual interpolation has completed.
+        pub fn advance_animations(&mut self, now: Instant) {
+            let snapshots: Vec<(Window, AnimationRect, bool, bool)> = self
+                .window_animations
+                .iter()
+                .map(|animation| {
+                    (
+                        animation.window.clone(),
+                        animation.geometry.to,
+                        animation.geometry.is_finished(now),
+                        animation.waiting_for_client,
+                    )
+                })
+                .collect();
+
+            let mut remove = Vec::new();
+            for (window, target, finished, waiting_for_client) in snapshots {
+                if !self.space.elements().any(|mapped| mapped == &window) {
+                    remove.push(window);
+                    continue;
+                }
+                if waiting_for_client || !finished {
+                    continue;
+                }
+
+                let actual_size = window.geometry().size;
+                let target_width = target.width.round() as i32;
+                let target_height = target.height.round() as i32;
+                if actual_size.w == target_width && actual_size.h == target_height {
+                    let target_location =
+                        Point::from((target.x.round() as i32, target.y.round() as i32));
+                    if self.space.element_location(&window) != Some(target_location) {
+                        self.space
+                            .map_element(window.clone(), target_location, false);
+                    }
+                    remove.push(window);
                 }
             }
 
-            if finished {
-                if let Some(animation) = self.window_animations.iter()
-                    .find(|animation| animation.window == window)
-                {
-                    let actual_size = window.geometry().size;
-                    let target_width = animation.geometry.to.width.round() as i32;
-                    let target_height = animation.geometry.to.height.round() as i32;
-                    if actual_size.w == target_width && actual_size.h == target_height {
-                        let target_location = Point::from((
-                            target.x.round() as i32,
-                            target.y.round() as i32,
-                        ));
-                        if self.space.element_location(&window) != Some(target_location) {
-                            self.space.map_element(window.clone(), target_location, false);
-                        }
-                        remove.push(window);
-                    }
-                }
-            }
+            self.window_animations
+                .retain(|animation| !remove.contains(&animation.window));
         }
 
-        self.window_animations.retain(|animation| !remove.contains(&animation.window));
-    }
-
-    /// Return the current render-time geometry for a transitioning window.
-    pub fn animation_geometry(&self, window: &Window, now: Instant) -> Option<AnimationRect> {
-        self.window_animations
-            .iter()
-            .find(|animation| animation.window == *window)
-            .map(|animation| animation.geometry.sample(now))
-    }
-
-    pub fn new(event_loop: &mut EventLoop<Self>, display: Display<Self>, config: Config) -> Self {
-        let start_time = std::time::Instant::now();
-
-        let dh = display.handle();
-
-        // Here we initialize implementations of some wayland protocols
-        // Some of them require us to implement traits on the AlpiniumState state,
-        // you can find those implementations in the `crate::handlers` module
-
-        // Initialize protocols needed for displaying windows
-        let compositor_state = CompositorState::new::<Self>(&dh);
-        let xdg_shell_state = XdgShellState::new::<Self>(&dh);
-        let shm_state = ShmState::new::<Self>(&dh, vec![]);
-        let popups = PopupManager::default();
-
-        let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
-
-        // Data device is responsible for clipboard and drag-and-drop
-        let data_device_state = DataDeviceState::new::<Self>(&dh);
-
-        // A seat is a group of keyboards, pointer and touch devices.
-        // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
-        let mut seat_state = SeatState::new();
-        let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "alpinium");
-
-        // Notify clients that we have a keyboard, for the sake of the example we assume that keyboard is always present.
-        // You may want to track keyboard hot-plug in real compositor.
-        seat.add_keyboard(Default::default(), 200, 25).unwrap();
-
-        // Notify clients that we have a pointer (mouse)
-        // Here we assume that there is always pointer plugged in
-        seat.add_pointer();
-
-        // A space represents a two-dimensional plane. Windows and Outputs can be mapped onto it.
-        //
-        // Windows get a position and stacking order through mapping.
-        // Outputs become views of a part of the Space and can be rendered via Space::render_output.
-        let space = Space::default();
-
-        // Setup a wayland socket that will be used to accept clients
-        let socket_name = Self::init_wayland_listener(display, event_loop);
-
-        // Get the loop signal, used to stop the event loop
-        let loop_signal = event_loop.get_signal();
-
-        Self {
-            start_time,
-            config,
-            display_handle: dh,
-
-            space,
-            window_order: Vec::new(),
-            buffer_attached_windows: Vec::new(),
-            unmapped_window_locations: Vec::new(),
-            focused_window: None,
-            host_focused: true,
-            window_animations: Vec::new(),
-            newly_mapped_windows: Vec::new(),
-            loop_signal,
-            socket_name,
-
-            compositor_state,
-            xdg_shell_state,
-            shm_state,
-            _output_manager_state: output_manager_state,
-            seat_state,
-            data_device_state,
-            popups,
-            seat,
+        /// Return the current render-time geometry for a transitioning window.
+        pub fn animation_geometry(&self, window: &Window, now: Instant) -> Option<AnimationRect> {
+            self.window_animations
+                .iter()
+                .find(|animation| animation.window == *window)
+                .filter(|animation| !animation.waiting_for_client)
+                .map(|animation| animation.geometry.sample(now))
         }
-    }
 
-    fn init_wayland_listener(display: Display<AlpiniumState>, event_loop: &mut EventLoop<Self>) -> OsString {
-        // Creates a new listening socket, automatically choosing the next available `wayland` socket name.
-        let listening_socket = ListeningSocketSource::new_auto().unwrap();
-
-        // Get the name of the listening socket.
-        // Clients will connect to this socket.
-        let socket_name = listening_socket.socket_name().to_os_string();
-
-        let loop_handle = event_loop.handle();
-
-        loop_handle
-            .insert_source(listening_socket, move |client_stream, _, state| {
-                // Inside the callback, you should insert the client into the display.
-                //
-                // You may also associate some data with the client when inserting the client.
-                state
-                    .display_handle
-                    .insert_client(client_stream, Arc::new(ClientState::default()))
-                    .unwrap();
-            })
-            .expect("Failed to init the wayland event source.");
-
-        // You also need to add the display itself to the event loop, so that client events will be processed by wayland-server.
-        loop_handle
-            .insert_source(
-                Generic::new(display, Interest::READ, Mode::Level),
-                |_, display, state| {
-                    // Safety: we don't drop the display
-                    unsafe {
-                        display.get_mut().dispatch_clients(state).unwrap();
-                    }
-                    Ok(PostAction::Continue)
-                },
-            )
-            .unwrap();
-
-        socket_name
-    }
-
-    /// Find the Wayland surface under a point, accounting for render-time
-    /// movement and scaling during a geometry transition.
-    pub fn surface_under(&self, pos: Point<f64, Logical>) -> Option<(WlSurface, Point<f64, Logical>)> {
-        let now = Instant::now();
-        for window in self.space.elements().rev() {
-            let Some(mapped_location) = self.space.element_location(window) else {
-                continue;
-            };
-            let geometry = window.geometry();
-            let animated = self.animation_geometry(window, now);
-            let (x, y, scale_x, scale_y) = animated
-                .map(|rect| (
-                    rect.x,
-                    rect.y,
-                    rect.width / f64::from(geometry.size.w.max(1)),
-                    rect.height / f64::from(geometry.size.h.max(1)),
-                ))
-                .unwrap_or((
-                    f64::from(mapped_location.x),
-                    f64::from(mapped_location.y),
-                    1.0,
-                    1.0,
-                ));
-            let origin: Point<f64, Logical> = Point::from((
-                x - f64::from(geometry.loc.x),
-                y - f64::from(geometry.loc.y),
-            ));
-            let local: Point<f64, Logical> = Point::from((
-                (pos.x - origin.x) / scale_x.max(0.01),
-                (pos.y - origin.y) / scale_y.max(0.01),
-            ));
-
-            if let Some((surface, surface_location)) =
-                window.surface_under(local, WindowSurfaceType::ALL)
+        pub fn start_waiting_window_animation(&mut self, window: &Window) {
+            let actual_size = window.geometry().size;
+            if let Some(animation) = self
+                .window_animations
+                .iter_mut()
+                .find(|animation| animation.window == *window && animation.waiting_for_client)
             {
-                let surface_location = surface_location.to_f64();
-                let global_location: Point<f64, Logical> = Point::from((
-                    origin.x + surface_location.x * scale_x,
-                    origin.y + surface_location.y * scale_y,
-                ));
-                return Some((surface, global_location));
+                let target_width = animation.geometry.to.width.round() as i32;
+                let target_height = animation.geometry.to.height.round() as i32;
+                if actual_size.w == target_width && actual_size.h == target_height {
+                    animation.geometry.started_at = Instant::now();
+                    animation.waiting_for_client = false;
+                }
             }
         }
-        None
+
+        pub fn new(
+            event_loop: &mut EventLoop<Self>,
+            display: Display<Self>,
+            config: Config,
+        ) -> Self {
+            let start_time = std::time::Instant::now();
+
+            let dh = display.handle();
+
+            // Here we initialize implementations of some wayland protocols
+            // Some of them require us to implement traits on the AlpiniumState state,
+            // you can find those implementations in the `crate::handlers` module
+
+            // Initialize protocols needed for displaying windows
+            let compositor_state = CompositorState::new::<Self>(&dh);
+            let xdg_shell_state = XdgShellState::new::<Self>(&dh);
+            let shm_state = ShmState::new::<Self>(&dh, vec![]);
+            let popups = PopupManager::default();
+
+            let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
+
+            // Data device is responsible for clipboard and drag-and-drop
+            let data_device_state = DataDeviceState::new::<Self>(&dh);
+
+            // A seat is a group of keyboards, pointer and touch devices.
+            // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
+            let mut seat_state = SeatState::new();
+            let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "alpinium");
+
+            // Notify clients that we have a keyboard, for the sake of the example we assume that keyboard is always present.
+            // You may want to track keyboard hot-plug in real compositor.
+            seat.add_keyboard(Default::default(), 200, 25).unwrap();
+
+            // Notify clients that we have a pointer (mouse)
+            // Here we assume that there is always pointer plugged in
+            seat.add_pointer();
+
+            // A space represents a two-dimensional plane. Windows and Outputs can be mapped onto it.
+            //
+            // Windows get a position and stacking order through mapping.
+            // Outputs become views of a part of the Space and can be rendered via Space::render_output.
+            let space = Space::default();
+
+            // Setup a wayland socket that will be used to accept clients
+            let socket_name = Self::init_wayland_listener(display, event_loop);
+
+            // Get the loop signal, used to stop the event loop
+            let loop_signal = event_loop.get_signal();
+
+            Self {
+                start_time,
+                config,
+                display_handle: dh,
+
+                space,
+                window_order: Vec::new(),
+                buffer_attached_windows: Vec::new(),
+                unmapped_window_locations: Vec::new(),
+                focused_window: None,
+                host_focused: true,
+                window_animations: Vec::new(),
+                newly_mapped_windows: Vec::new(),
+                loop_signal,
+                socket_name,
+
+                compositor_state,
+                xdg_shell_state,
+                shm_state,
+                _output_manager_state: output_manager_state,
+                seat_state,
+                data_device_state,
+                popups,
+                seat,
+            }
+        }
+
+        fn init_wayland_listener(
+            display: Display<AlpiniumState>,
+            event_loop: &mut EventLoop<Self>,
+        ) -> OsString {
+            // Creates a new listening socket, automatically choosing the next available `wayland` socket name.
+            let listening_socket = ListeningSocketSource::new_auto().unwrap();
+
+            // Get the name of the listening socket.
+            // Clients will connect to this socket.
+            let socket_name = listening_socket.socket_name().to_os_string();
+
+            let loop_handle = event_loop.handle();
+
+            loop_handle
+                .insert_source(listening_socket, move |client_stream, _, state| {
+                    // Inside the callback, you should insert the client into the display.
+                    //
+                    // You may also associate some data with the client when inserting the client.
+                    state
+                        .display_handle
+                        .insert_client(client_stream, Arc::new(ClientState::default()))
+                        .unwrap();
+                })
+                .expect("Failed to init the wayland event source.");
+
+            // You also need to add the display itself to the event loop, so that client events will be processed by wayland-server.
+            loop_handle
+                .insert_source(
+                    Generic::new(display, Interest::READ, Mode::Level),
+                    |_, display, state| {
+                        // Safety: we don't drop the display
+                        unsafe {
+                            display.get_mut().dispatch_clients(state).unwrap();
+                        }
+                        Ok(PostAction::Continue)
+                    },
+                )
+                .unwrap();
+
+            socket_name
+        }
+
+        /// Find the Wayland surface under a point, accounting for render-time
+        /// movement and scaling during a geometry transition.
+        pub fn surface_under(
+            &self,
+            pos: Point<f64, Logical>,
+        ) -> Option<(WlSurface, Point<f64, Logical>)> {
+            let now = Instant::now();
+            for window in self.space.elements().rev() {
+                let Some(mapped_location) = self.space.element_location(window) else {
+                    continue;
+                };
+                let geometry = window.geometry();
+                let animated = self.animation_geometry(window, now);
+                if let Some(rect) = animated.as_ref() {
+                    if pos.x < rect.x
+                        || pos.y < rect.y
+                        || pos.x >= rect.x + rect.width
+                        || pos.y >= rect.y + rect.height
+                    {
+                        continue;
+                    }
+                }
+                let (origin, scale_x, scale_y): (Point<f64, Logical>, f64, f64) = animated
+                    .map(|rect| {
+                        let scale_x = (rect.width / f64::from(geometry.size.w.max(1))).max(0.01);
+                        let scale_y = (rect.height / f64::from(geometry.size.h.max(1))).max(0.01);
+                        (
+                            Point::from((
+                                rect.x - f64::from(geometry.loc.x) * scale_x,
+                                rect.y - f64::from(geometry.loc.y) * scale_y,
+                            )),
+                            scale_x,
+                            scale_y,
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        (
+                            Point::from((
+                                f64::from(mapped_location.x) - f64::from(geometry.loc.x),
+                                f64::from(mapped_location.y) - f64::from(geometry.loc.y),
+                            )),
+                            1.0,
+                            1.0,
+                        )
+                    });
+                let local: Point<f64, Logical> =
+                    Point::from(((pos.x - origin.x) / scale_x, (pos.y - origin.y) / scale_y));
+
+                if let Some((surface, surface_location)) =
+                    window.surface_under(local, WindowSurfaceType::ALL)
+                {
+                    let surface_location = surface_location.to_f64();
+                    let global_location: Point<f64, Logical> = Point::from((
+                        origin.x + surface_location.x * scale_x,
+                        origin.y + surface_location.y * scale_y,
+                    ));
+                    return Some((surface, global_location));
+                }
+            }
+            None
+        }
+
+        /// Find the topmost window under a point using the same animated geometry
+        /// as rendering, so pointer focus follows moving/resizing windows.
+        pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<Window> {
+            let now = Instant::now();
+            self.space.elements().rev().find_map(|window| {
+                let mapped_location = self.space.element_location(window)?;
+                let geometry = window.geometry();
+                let animated = self.animation_geometry(window, now);
+                if let Some(rect) = animated.as_ref() {
+                    if pos.x < rect.x
+                        || pos.y < rect.y
+                        || pos.x >= rect.x + rect.width
+                        || pos.y >= rect.y + rect.height
+                    {
+                        return None;
+                    }
+                }
+                let (origin, scale_x, scale_y): (Point<f64, Logical>, f64, f64) = animated
+                    .map(|rect| {
+                        let scale_x = (rect.width / f64::from(geometry.size.w.max(1))).max(0.01);
+                        let scale_y = (rect.height / f64::from(geometry.size.h.max(1))).max(0.01);
+                        (
+                            Point::from((
+                                rect.x - f64::from(geometry.loc.x) * scale_x,
+                                rect.y - f64::from(geometry.loc.y) * scale_y,
+                            )),
+                            scale_x,
+                            scale_y,
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        (
+                            Point::from((
+                                f64::from(mapped_location.x) - f64::from(geometry.loc.x),
+                                f64::from(mapped_location.y) - f64::from(geometry.loc.y),
+                            )),
+                            1.0,
+                            1.0,
+                        )
+                    });
+                let local: Point<f64, Logical> =
+                    Point::from(((pos.x - origin.x) / scale_x, (pos.y - origin.y) / scale_y));
+
+                window
+                    .surface_under(local, WindowSurfaceType::ALL)
+                    .map(|_| window.clone())
+            })
+        }
     }
 
-    /// Find the topmost window under a point using the same animated geometry
-    /// as rendering, so pointer focus follows moving/resizing windows.
-    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<Window> {
-        let now = Instant::now();
-        self.space.elements().rev().find_map(|window| {
-            let mapped_location = self.space.element_location(window)?;
-            let geometry = window.geometry();
-            let animated = self.animation_geometry(window, now);
-            let (x, y, scale_x, scale_y) = animated
-                .map(|rect| (
-                    rect.x,
-                    rect.y,
-                    rect.width / f64::from(geometry.size.w.max(1)),
-                    rect.height / f64::from(geometry.size.h.max(1)),
-                ))
-                .unwrap_or((
-                    f64::from(mapped_location.x),
-                    f64::from(mapped_location.y),
-                    1.0,
-                    1.0,
-                ));
-            let origin: Point<f64, Logical> = Point::from((
-                x - f64::from(geometry.loc.x),
-                y - f64::from(geometry.loc.y),
-            ));
-            let local: Point<f64, Logical> = Point::from((
-                (pos.x - origin.x) / scale_x.max(0.01),
-                (pos.y - origin.y) / scale_y.max(0.01),
-            ));
-
-            window
-                .surface_under(local, WindowSurfaceType::ALL)
-                .map(|_| window.clone())
-        })
+    /// Data associated with a wayland client that connects to AlpiniumState.
+    /// One instance of this type per client.
+    #[derive(Default)]
+    pub struct ClientState {
+        pub compositor_state: CompositorClientState,
     }
-}
 
-/// Data associated with a wayland client that connects to AlpiniumState.
-/// One instance of this type per client.
-#[derive(Default)]
-pub struct ClientState {
-    pub compositor_state: CompositorClientState,
-}
-
-impl ClientData for ClientState {
-    fn initialized(&self, _client_id: ClientId) {}
-    fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
-}
-
+    impl ClientData for ClientState {
+        fn initialized(&self, _client_id: ClientId) {}
+        fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
+    }
 }
 mod winit {
-use std::time::Duration;
+    use std::time::Duration;
 
-use smithay::{
-    backend::{
-        renderer::{damage::OutputDamageTracker, gles::GlesRenderer},
-        winit::{self, WinitEvent},
-    },
-    output::{Mode, Output, PhysicalProperties, Subpixel},
-    reexports::calloop::EventLoop,
-    utils::{Rectangle, Transform},
-};
-
-use crate::nested::AlpiniumState;
-
-pub fn init_winit(
-    event_loop: &mut EventLoop<AlpiniumState>,
-    state: &mut AlpiniumState,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let (mut backend, winit) = winit::init::<GlesRenderer>()?;
-
-    let mode = Mode {
-        size: backend.window_size(),
-        refresh: 60_000,
+    use smithay::{
+        backend::{
+            renderer::{damage::OutputDamageTracker, gles::GlesRenderer},
+            winit::{self, WinitEvent},
+        },
+        output::{Mode, Output, PhysicalProperties, Subpixel},
+        reexports::calloop::EventLoop,
+        utils::{Rectangle, Transform},
     };
 
-    let output = Output::new(
-        "winit".to_string(),
-        PhysicalProperties {
-            size: (0, 0).into(),
-            subpixel: Subpixel::Unknown,
-            make: "Smithay".into(),
-            model: "Winit".into(),
-        },
-    );
-    let _global = output.create_global::<AlpiniumState>(&state.display_handle);
-    output.change_current_state(Some(mode), Some(Transform::Flipped180), None, Some((0, 0).into()));
-    output.set_preferred(mode);
+    use crate::nested::AlpiniumState;
 
-    state.space.map_output(&output, (0, 0));
+    pub fn init_winit(
+        event_loop: &mut EventLoop<AlpiniumState>,
+        state: &mut AlpiniumState,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (mut backend, winit) = winit::init::<GlesRenderer>()?;
 
-    let mut damage_tracker = OutputDamageTracker::from_output(&output);
-
-    event_loop.handle().insert_source(winit, move |event, _, state| {
-        match event {
-            WinitEvent::Resized { size, .. } => {
-                output.change_current_state(
-                    Some(Mode {
-                        size,
-                        refresh: 60_000,
-                    }),
-                    None,
-                    None,
-                    None,
-                );
-            }
-            WinitEvent::Input(event) => state.process_input_event(event),
-            WinitEvent::Focus(focused) => state.handle_host_focus(focused),
-            WinitEvent::Redraw => {
-                state.space.refresh();
-                state.apply_layout();
-                state.advance_animations(std::time::Instant::now());
-
-                let size = backend.window_size();
-                let damage = Rectangle::from_size(size);
-
-                {
-                    let (renderer, mut framebuffer) = backend.bind().unwrap();
-                    let elements = crate::render::space_render_elements(state, renderer, &output);
-                    damage_tracker.render_output(
-                        renderer,
-                        &mut framebuffer,
-                        0,
-                        &elements,
-                        [0.1, 0.1, 0.1, 1.0],
-                    )
-                    .unwrap();
-                }
-                backend.submit(Some(&[damage])).unwrap();
-
-                state.space.elements().for_each(|window| {
-                    window.send_frame(
-                        &output,
-                        state.start_time.elapsed(),
-                        Some(Duration::ZERO),
-                        |_, _| Some(output.clone()),
-                    )
-                });
-
-                state.popups.cleanup();
-                let _ = state.display_handle.flush_clients();
-
-                // Ask for redraw to schedule new frame.
-                backend.window().request_redraw();
-            }
-            WinitEvent::CloseRequested => {
-                state.loop_signal.stop();
-            }
+        let mode = Mode {
+            size: backend.window_size(),
+            refresh: 60_000,
         };
-    })?;
 
-    Ok(())
-}
+        let output = Output::new(
+            "winit".to_string(),
+            PhysicalProperties {
+                size: (0, 0).into(),
+                subpixel: Subpixel::Unknown,
+                make: "Smithay".into(),
+                model: "Winit".into(),
+            },
+        );
+        let _global = output.create_global::<AlpiniumState>(&state.display_handle);
+        output.change_current_state(
+            Some(mode),
+            Some(Transform::Flipped180),
+            None,
+            Some((0, 0).into()),
+        );
+        output.set_preferred(mode);
 
+        state.space.map_output(&output, (0, 0));
+
+        let mut damage_tracker = OutputDamageTracker::from_output(&output);
+
+        event_loop
+            .handle()
+            .insert_source(winit, move |event, _, state| {
+                match event {
+                    WinitEvent::Resized { size, .. } => {
+                        output.change_current_state(
+                            Some(Mode {
+                                size,
+                                refresh: 60_000,
+                            }),
+                            None,
+                            None,
+                            None,
+                        );
+                    }
+                    WinitEvent::Input(event) => state.process_input_event(event),
+                    WinitEvent::Focus(focused) => state.handle_host_focus(focused),
+                    WinitEvent::Redraw => {
+                        state.space.refresh();
+                        state.apply_layout();
+                        state.advance_animations(std::time::Instant::now());
+
+                        let size = backend.window_size();
+                        let damage = Rectangle::from_size(size);
+
+                        {
+                            let (renderer, mut framebuffer) = backend.bind().unwrap();
+                            let elements =
+                                crate::render::space_render_elements(state, renderer, &output);
+                            damage_tracker
+                                .render_output(
+                                    renderer,
+                                    &mut framebuffer,
+                                    0,
+                                    &elements,
+                                    [0.1, 0.1, 0.1, 1.0],
+                                )
+                                .unwrap();
+                        }
+                        backend.submit(Some(&[damage])).unwrap();
+
+                        state.space.elements().for_each(|window| {
+                            window.send_frame(
+                                &output,
+                                state.start_time.elapsed(),
+                                Some(Duration::ZERO),
+                                |_, _| Some(output.clone()),
+                            )
+                        });
+
+                        state.popups.cleanup();
+                        let _ = state.display_handle.flush_clients();
+
+                        // Ask for redraw to schedule new frame.
+                        backend.window().request_redraw();
+                    }
+                    WinitEvent::CloseRequested => {
+                        state.loop_signal.stop();
+                    }
+                };
+            })?;
+
+        Ok(())
+    }
 }
 
 pub use state::AlpiniumState;
@@ -2027,7 +2149,10 @@ pub fn run(
 
     winit::init_winit(&mut event_loop, &mut state)?;
 
-    println!("Alpinium {} — nested Wayland compositor", env!("CARGO_PKG_VERSION"));
+    println!(
+        "Alpinium {} — nested Wayland compositor",
+        env!("CARGO_PKG_VERSION")
+    );
     println!("Configuration: {source}");
     println!("Configured layout mode: {}", state.config.mode);
     println!("Wayland socket: {}", state.socket_name.to_string_lossy());

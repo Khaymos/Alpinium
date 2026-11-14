@@ -14,7 +14,12 @@ pub struct LayoutRect {
 
 impl LayoutRect {
     pub const fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 }
 
@@ -60,9 +65,7 @@ pub fn master_stack_layout(
     let master_width = (((content_width as i64) * 55) / 100) as i32;
     let master_width = master_width.clamp(1, content_width - 1);
     let stack_width = content_width - master_width;
-    let stack_x = x
-        .saturating_add(master_width)
-        .saturating_add(column_gap);
+    let stack_x = x.saturating_add(master_width).saturating_add(column_gap);
 
     let mut placements = Vec::with_capacity(window_count);
     placements.push(LayoutRect::new(x, y, master_width, usable_height));
@@ -163,7 +166,11 @@ mod tests {
         let result = master_stack_layout(LayoutRect::new(0, 0, 2, 2), 5, 50, 50);
 
         assert_eq!(result.len(), 5);
-        assert!(result.iter().all(|rect| rect.width >= 0 && rect.height >= 0));
+        assert!(
+            result
+                .iter()
+                .all(|rect| rect.width >= 0 && rect.height >= 0)
+        );
     }
 
     #[test]
@@ -171,7 +178,11 @@ mod tests {
         let result = master_stack_layout(LayoutRect::new(0, 0, 100, 60), 2, u32::MAX, u32::MAX);
 
         assert_eq!(result.len(), 2);
-        assert!(result.iter().all(|rect| rect.width >= 1 && rect.height >= 1));
+        assert!(
+            result
+                .iter()
+                .all(|rect| rect.width >= 1 && rect.height >= 1)
+        );
         assert!(result[0].x >= 0 && result[0].y >= 0);
     }
 }

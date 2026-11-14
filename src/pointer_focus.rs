@@ -31,22 +31,37 @@ mod tests {
 
     #[test]
     fn press_over_window_requests_focus() {
-        assert_eq!(click_focus_action(true, false, true), ClickFocusAction::FocusWindow);
+        assert_eq!(
+            click_focus_action(true, false, true),
+            ClickFocusAction::FocusWindow
+        );
     }
 
     #[test]
     fn press_on_empty_space_clears_focus() {
-        assert_eq!(click_focus_action(true, false, false), ClickFocusAction::ClearFocus);
+        assert_eq!(
+            click_focus_action(true, false, false),
+            ClickFocusAction::ClearFocus
+        );
     }
 
     #[test]
     fn button_release_preserves_focus() {
-        assert_eq!(click_focus_action(false, false, true), ClickFocusAction::KeepCurrent);
+        assert_eq!(
+            click_focus_action(false, false, true),
+            ClickFocusAction::KeepCurrent
+        );
     }
 
     #[test]
     fn active_pointer_grab_preserves_focus() {
-        assert_eq!(click_focus_action(true, true, true), ClickFocusAction::KeepCurrent);
-        assert_eq!(click_focus_action(true, true, false), ClickFocusAction::KeepCurrent);
+        assert_eq!(
+            click_focus_action(true, true, true),
+            ClickFocusAction::KeepCurrent
+        );
+        assert_eq!(
+            click_focus_action(true, true, false),
+            ClickFocusAction::KeepCurrent
+        );
     }
 }

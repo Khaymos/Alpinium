@@ -18,7 +18,11 @@ impl Modifiers {
                 "alt" | "mod1" => &mut modifiers.alt,
                 "shift" => &mut modifiers.shift,
                 "super" | "logo" | "mod4" => &mut modifiers.logo,
-                other => return Err(format!("unsupported modifier '{other}'; use Ctrl, Alt/Mod1, Shift, or Super/Mod4")),
+                other => {
+                    return Err(format!(
+                        "unsupported modifier '{other}'; use Ctrl, Alt/Mod1, Shift, or Super/Mod4"
+                    ));
+                }
             };
             if *target {
                 return Err(format!("modifier '{token}' was specified more than once"));
@@ -34,10 +38,18 @@ impl Modifiers {
 
     fn format(self) -> Vec<&'static str> {
         let mut parts = Vec::new();
-        if self.ctrl { parts.push("Ctrl"); }
-        if self.alt { parts.push("Mod1"); }
-        if self.shift { parts.push("Shift"); }
-        if self.logo { parts.push("Mod4"); }
+        if self.ctrl {
+            parts.push("Ctrl");
+        }
+        if self.alt {
+            parts.push("Mod1");
+        }
+        if self.shift {
+            parts.push("Shift");
+        }
+        if self.logo {
+            parts.push("Mod4");
+        }
         parts
     }
 }
@@ -115,16 +127,8 @@ impl Binding {
         })
     }
 
-    pub fn matches(
-        &self,
-        ctrl: bool,
-        alt: bool,
-        shift: bool,
-        logo: bool,
-        key_name: &str,
-    ) -> bool {
-        self.modifiers.matches(ctrl, alt, shift, logo)
-            && self.key.eq_ignore_ascii_case(key_name)
+    pub fn matches(&self, ctrl: bool, alt: bool, shift: bool, logo: bool, key_name: &str) -> bool {
+        self.modifiers.matches(ctrl, alt, shift, logo) && self.key.eq_ignore_ascii_case(key_name)
     }
 
     pub(crate) fn same_trigger_for_config(&self, other: &Self) -> bool {
@@ -132,7 +136,12 @@ impl Binding {
     }
 
     pub fn as_config(&self) -> String {
-        let mut parts: Vec<String> = self.modifiers.format().into_iter().map(str::to_string).collect();
+        let mut parts: Vec<String> = self
+            .modifiers
+            .format()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
         parts.push(self.key.clone());
         format!("bindsym {} {}", parts.join("+"), self.action.as_config())
     }

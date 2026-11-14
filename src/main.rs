@@ -1,12 +1,12 @@
 mod animation;
-mod render;
 mod config;
-mod layout;
 mod keybindings;
-mod nested;
-mod window_lifecycle;
-mod pointer_focus;
+mod layout;
 mod native;
+mod nested;
+mod pointer_focus;
+mod render;
+mod window_lifecycle;
 
 use config::Config;
 use std::env;
@@ -72,11 +72,19 @@ fn run() -> Result<(), String> {
     if start_nested && start_native {
         return Err("--nested and --native cannot be used together".to_string());
     }
-    if (start_nested || start_native) && (check_config || print_config || native_probe || native_renderer_probe) {
-        return Err("compositor backends cannot be combined with config checks or native diagnostics".to_string());
+    if (start_nested || start_native)
+        && (check_config || print_config || native_probe || native_renderer_probe)
+    {
+        return Err(
+            "compositor backends cannot be combined with config checks or native diagnostics"
+                .to_string(),
+        );
     }
     if (native_probe || native_renderer_probe) && (check_config || print_config) {
-        return Err("native diagnostics cannot be combined with --check-config or --print-config".to_string());
+        return Err(
+            "native diagnostics cannot be combined with --check-config or --print-config"
+                .to_string(),
+        );
     }
     if native_probe && native_renderer_probe {
         return Err("choose either --native-probe or --native-renderer-probe".to_string());
@@ -117,22 +125,41 @@ fn run() -> Result<(), String> {
         println!("mode {}", config.mode);
         println!(
             "animations {}",
-            if config.animations { "enabled" } else { "disabled" }
+            if config.animations {
+                "enabled"
+            } else {
+                "disabled"
+            }
         );
         println!("animation_duration {}ms", config.animation_duration_ms);
         println!("animation_curve {}", config.animation_curve.as_str());
         println!(
             "window_move_animation {}",
-            if config.window_move_animation { "enabled" } else { "disabled" }
+            if config.window_move_animation {
+                "enabled"
+            } else {
+                "disabled"
+            }
         );
         println!(
             "window_resize_animation {}",
-            if config.window_resize_animation { "enabled" } else { "disabled" }
+            if config.window_resize_animation {
+                "enabled"
+            } else {
+                "disabled"
+            }
         );
         println!("gaps inner {}", config.inner_gap);
         println!("gaps outer {}", config.outer_gap);
         println!("corner_radius {}", config.corner_radius);
-        println!("shadows {}", if config.shadows { "enabled" } else { "disabled" });
+        println!(
+            "shadows {}",
+            if config.shadows {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        );
         for binding in &config.bindings {
             println!("{}", binding.as_config());
         }

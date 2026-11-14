@@ -3,8 +3,8 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::keybindings::{default_bindings, Binding};
 use crate::animation::AnimationCurve;
+use crate::keybindings::{Binding, default_bindings};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LayoutMode {
@@ -68,7 +68,10 @@ pub struct ConfigError {
 
 impl ConfigError {
     fn at_line(line: usize, message: impl Into<String>) -> Self {
-        Self { line: Some(line), message: message.into() }
+        Self {
+            line: Some(line),
+            message: message.into(),
+        }
     }
 }
 
@@ -104,13 +107,22 @@ impl Config {
                 let name = fields.next().unwrap_or_default();
                 let value = fields.next().unwrap_or_default().trim();
                 let variable = name.strip_prefix('$').ok_or_else(|| {
-                    ConfigError::at_line(line_number, "set expects a variable name beginning with '$'")
+                    ConfigError::at_line(
+                        line_number,
+                        "set expects a variable name beginning with '$'",
+                    )
                 })?;
                 if !valid_variable_name(variable) {
-                    return Err(ConfigError::at_line(line_number, format!("invalid variable name '{name}'")));
+                    return Err(ConfigError::at_line(
+                        line_number,
+                        format!("invalid variable name '{name}'"),
+                    ));
                 }
                 if value.is_empty() {
-                    return Err(ConfigError::at_line(line_number, "set requires a variable value"));
+                    return Err(ConfigError::at_line(
+                        line_number,
+                        "set requires a variable value",
+                    ));
                 }
                 let value = expand_variables(value, &variables, line_number)?;
                 variables.insert(variable.to_string(), value);
@@ -136,7 +148,10 @@ impl Config {
                     parsed_bindings.clear();
                     explicit_bindings = true;
                 }
-                if parsed_bindings.iter().any(|existing| existing.same_trigger_for_config(&binding)) {
+                if parsed_bindings
+                    .iter()
+                    .any(|existing| existing.same_trigger_for_config(&binding))
+                {
                     return Err(ConfigError::at_line(
                         line_number,
                         format!("duplicate keybinding for '{combination}'"),
@@ -152,15 +167,22 @@ impl Config {
                     config.mode = match *value {
                         "tiling" => LayoutMode::Tiling,
                         "floating" => LayoutMode::Floating,
-                        _ => return Err(ConfigError::at_line(
-                            line_number,
-                            format!("unsupported mode '{value}'; expected 'tiling' or 'floating'"),
-                        )),
+                        _ => {
+                            return Err(ConfigError::at_line(
+                                line_number,
+                                format!(
+                                    "unsupported mode '{value}'; expected 'tiling' or 'floating'"
+                                ),
+                            ));
+                        }
                     };
                 }
                 ["animations", value] => {
                     config.animations = parse_enabled(value).ok_or_else(|| {
-                        ConfigError::at_line(line_number, "expected 'enabled' or 'disabled' for animations")
+                        ConfigError::at_line(
+                            line_number,
+                            "expected 'enabled' or 'disabled' for animations",
+                        )
                     })?;
                 }
                 ["animation_duration", value] => {
@@ -170,7 +192,8 @@ impl Config {
                             "animation_duration must use milliseconds, for example 200ms",
                         )
                     })?;
-                    config.animation_duration_ms = parse_u32(duration, line_number, "animation duration")?;
+                    config.animation_duration_ms =
+                        parse_u32(duration, line_number, "animation duration")?;
                 }
                 ["animation_curve", value] => {
                     config.animation_curve = AnimationCurve::parse(value).ok_or_else(|| {
@@ -207,13 +230,18 @@ impl Config {
                 }
                 ["shadows", value] => {
                     config.shadows = parse_enabled(value).ok_or_else(|| {
-                        ConfigError::at_line(line_number, "expected 'enabled' or 'disabled' for shadows")
+                        ConfigError::at_line(
+                            line_number,
+                            "expected 'enabled' or 'disabled' for shadows",
+                        )
                     })?;
                 }
-                [directive, ..] => return Err(ConfigError::at_line(
-                    line_number,
-                    format!("unknown or malformed directive '{directive}'"),
-                )),
+                [directive, ..] => {
+                    return Err(ConfigError::at_line(
+                        line_number,
+                        format!("unknown or malformed directive '{directive}'"),
+                    ));
+                }
                 [] => {}
             }
         }
@@ -231,7 +259,10 @@ impl Config {
     pub fn load(explicit_path: Option<&Path>) -> Result<(Self, Option<PathBuf>), String> {
         let path = if let Some(path) = explicit_path {
             if !path.is_file() {
-                return Err(format!("configuration file does not exist: {}", path.display()));
+                return Err(format!(
+                    "configuration file does not exist: {}",
+                    path.display()
+                ));
             }
             Some(path.to_path_buf())
         } else {
@@ -244,15 +275,17 @@ impl Config {
 
         let contents = fs::read_to_string(&path)
             .map_err(|error| format!("could not read {}: {error}", path.display()))?;
-        let config = Self::parse(&contents)
-            .map_err(|error| format!("{}: {error}", path.display()))?;
+        let config =
+            Self::parse(&contents).map_err(|error| format!("{}: {error}", path.display()))?;
         Ok((config, Some(path)))
     }
 }
 
 fn valid_variable_name(name: &str) -> bool {
     let mut chars = name.chars();
-    let Some(first) = chars.next() else { return false; };
+    let Some(first) = chars.next() else {
+        return false;
+    };
     (first.is_ascii_alphabetic() || first == '_')
         && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
@@ -287,7 +320,10 @@ fn expand_variables(
                 index += 1;
             }
             if index == chars.len() {
-                return Err(ConfigError::at_line(line, "unterminated variable reference"));
+                return Err(ConfigError::at_line(
+                    line,
+                    "unterminated variable reference",
+                ));
             }
             let name: String = chars[start..index].iter().collect();
             index += 1;
@@ -303,11 +339,14 @@ fn expand_variables(
         };
 
         if !valid_variable_name(&name) {
-            return Err(ConfigError::at_line(line, "invalid or empty variable reference"));
+            return Err(ConfigError::at_line(
+                line,
+                "invalid or empty variable reference",
+            ));
         }
-        let value = variables.get(&name).ok_or_else(|| {
-            ConfigError::at_line(line, format!("undefined variable '${name}'"))
-        })?;
+        let value = variables
+            .get(&name)
+            .ok_or_else(|| ConfigError::at_line(line, format!("undefined variable '${name}'")))?;
         output.push_str(value);
     }
 
@@ -334,13 +373,20 @@ fn config_candidates(
 ) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     if let Some(xdg_config_home) = xdg_config_home {
-        let xdg_config = PathBuf::from(xdg_config_home).join("alpinium").join("config");
+        let xdg_config = PathBuf::from(xdg_config_home)
+            .join("alpinium")
+            .join("config");
         if xdg_config.is_absolute() {
             candidates.push(xdg_config);
         }
     }
     if let Some(home) = home {
-        candidates.push(PathBuf::from(home).join(".config").join("alpinium").join("config"));
+        candidates.push(
+            PathBuf::from(home)
+                .join(".config")
+                .join("alpinium")
+                .join("config"),
+        );
     }
     candidates.push(PathBuf::from("/etc/alpinium/config"));
     candidates
@@ -428,22 +474,31 @@ mod tests {
     #[test]
     fn config_lookup_checks_xdg_then_home_then_system() {
         use std::ffi::OsStr;
-        let candidates = config_candidates(Some(OsStr::new("/tmp/alpinium-xdg")), Some(OsStr::new("/home/tester")));
-        assert_eq!(candidates, vec![
-            PathBuf::from("/tmp/alpinium-xdg/alpinium/config"),
-            PathBuf::from("/home/tester/.config/alpinium/config"),
-            PathBuf::from("/etc/alpinium/config"),
-        ]);
+        let candidates = config_candidates(
+            Some(OsStr::new("/tmp/alpinium-xdg")),
+            Some(OsStr::new("/home/tester")),
+        );
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from("/tmp/alpinium-xdg/alpinium/config"),
+                PathBuf::from("/home/tester/.config/alpinium/config"),
+                PathBuf::from("/etc/alpinium/config"),
+            ]
+        );
     }
 
     #[test]
     fn home_config_is_checked_when_xdg_config_home_is_missing() {
         use std::ffi::OsStr;
         let candidates = config_candidates(None, Some(OsStr::new("/home/tester")));
-        assert_eq!(candidates, vec![
-            PathBuf::from("/home/tester/.config/alpinium/config"),
-            PathBuf::from("/etc/alpinium/config"),
-        ]);
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from("/home/tester/.config/alpinium/config"),
+                PathBuf::from("/etc/alpinium/config"),
+            ]
+        );
     }
 
     #[test]
@@ -469,9 +524,9 @@ mod tests {
 
     #[test]
     fn variables_can_reference_earlier_variables() {
-        let config = Config::parse(
-            "set $base Mod4\nset $mod $base\nbindsym $mod+Return exec alacritty\n",
-        ).unwrap();
+        let config =
+            Config::parse("set $base Mod4\nset $mod $base\nbindsym $mod+Return exec alacritty\n")
+                .unwrap();
         assert!(config.bindings[0].modifiers.logo);
     }
 
