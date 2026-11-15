@@ -410,7 +410,7 @@ mod tests {
         let config = Config::parse("").expect("empty config should use defaults");
         assert_eq!(config, Config::default());
         assert_eq!(config.mode, LayoutMode::Tiling);
-        assert_eq!(config.bindings.len(), 5);
+        assert_eq!(config.bindings.len(), 6);
     }
 
     #[test]

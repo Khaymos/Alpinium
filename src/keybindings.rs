@@ -60,6 +60,7 @@ pub enum BindingAction {
     FocusNext,
     FocusPrevious,
     CloseFocused,
+    ToggleFloating,
     ExitCompositor,
 }
 
@@ -78,6 +79,7 @@ impl BindingAction {
             "focus" if rest == "prev" || rest == "previous" => Ok(Self::FocusPrevious),
             "focus" => Err("focus expects 'next' or 'prev'".to_string()),
             "kill" | "close" if rest.is_empty() => Ok(Self::CloseFocused),
+            "floating" if rest == "toggle" => Ok(Self::ToggleFloating),
             "exit" if rest.is_empty() => Ok(Self::ExitCompositor),
             "kill" | "close" | "exit" => Err(format!("unexpected arguments for '{verb}'")),
             "" => Err("missing binding action".to_string()),
@@ -91,6 +93,7 @@ impl BindingAction {
             Self::FocusNext => "focus next".to_string(),
             Self::FocusPrevious => "focus prev".to_string(),
             Self::CloseFocused => "kill".to_string(),
+            Self::ToggleFloating => "floating toggle".to_string(),
             Self::ExitCompositor => "exit".to_string(),
         }
     }
@@ -153,6 +156,7 @@ pub fn default_bindings(modifier: &str) -> Vec<Binding> {
         (format!("{modifier}+Tab"), "focus next"),
         (format!("{modifier}+Shift+Tab"), "focus prev"),
         (format!("{modifier}+q"), "kill"),
+        (format!("{modifier}+Shift+f"), "floating toggle"),
         (format!("{modifier}+Shift+e"), "exit"),
     ]
     .into_iter()
@@ -176,6 +180,23 @@ mod tests {
             binding.action,
             BindingAction::Execute("alacritty --option value".to_string())
         );
+    }
+
+    #[test]
+    fn parses_and_serializes_floating_toggle() {
+        let action = BindingAction::parse("floating toggle").unwrap();
+        assert_eq!(action, BindingAction::ToggleFloating);
+        assert_eq!(action.as_config(), "floating toggle");
+    }
+
+    #[test]
+    fn default_bindings_include_floating_toggle() {
+        assert!(default_bindings("Mod4").iter().any(|binding| {
+            binding.key.eq_ignore_ascii_case("f")
+                && binding.modifiers.logo
+                && binding.modifiers.shift
+                && binding.action == BindingAction::ToggleFloating
+        }));
     }
 
     #[test]
@@ -219,7 +240,7 @@ mod tests {
     #[test]
     fn built_in_bindings_use_the_selected_modifier() {
         let bindings = default_bindings("Mod1");
-        assert_eq!(bindings.len(), 5);
+        assert_eq!(bindings.len(), 6);
         assert!(bindings.iter().all(|binding| binding.modifiers.alt));
         assert!(bindings.iter().all(|binding| !binding.modifiers.logo));
     }

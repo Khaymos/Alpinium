@@ -1,13 +1,14 @@
-//! Shared render-element construction for animated windows.
+//! Shared render-element construction for animated windows and cursors.
 
 use std::time::Instant;
 
 use smithay::{
     backend::renderer::{
-        ImportAll, Renderer,
+        ImportAll, ImportDmaWl, ImportMem, ImportMemWl, Renderer,
         element::{
-            AsRenderElements, Wrap,
-            surface::WaylandSurfaceRenderElement,
+            AsRenderElements, Kind, Wrap,
+            memory::MemoryRenderBufferRenderElement,
+            surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree},
             utils::{
                 ConstrainAlign, ConstrainScaleBehavior, CropRenderElement, RelocateRenderElement,
                 RescaleRenderElement, constrain_render_elements,
@@ -15,28 +16,41 @@ use smithay::{
         },
     },
     desktop::space::SpaceRenderElements,
+    input::pointer::CursorImageStatus,
     output::Output,
-    utils::{Logical, Point, Rectangle, Scale, Size},
+    utils::{Logical, Physical, Point, Rectangle, Scale, Size},
 };
 
 use crate::nested::AlpiniumState;
 
-pub type AnimatedSpaceRenderElements<R> = SpaceRenderElements<
+#[allow(type_alias_bounds)]
+pub type AnimatedSpaceRenderElements<R>
+where
+    R: ImportAll + ImportMemWl + ImportDmaWl,
+= SpaceRenderElements<
     R,
     CropRenderElement<RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<R>>>>,
 >;
 
-/// Build window render elements with a shared geometry transition. The Space
-/// mapping remains at its target location, preserving z-order; the render
-/// element is relocated and rescaled for the current animation sample.
+smithay::backend::renderer::element::render_elements! {
+    pub AlpiniumRenderElements<R, WindowElement, CursorElement> where
+        R: ImportAll + ImportMem + ImportMemWl + ImportDmaWl;
+    Window=WindowElement,
+    Cursor=CursorElement,
+}
+
+/// Build window and cursor render elements. Cursor elements are placed first
+/// because the renderer consumes elements in front-to-back order.
 pub fn space_render_elements<R>(
     state: &AlpiniumState,
     renderer: &mut R,
     output: &Output,
-) -> Vec<AnimatedSpaceRenderElements<R>>
+) -> Vec<
+    AlpiniumRenderElements<R, AnimatedSpaceRenderElements<R>, MemoryRenderBufferRenderElement<R>>,
+>
 where
-    R: Renderer + ImportAll,
-    R::TextureId: Clone + 'static,
+    R: Renderer + ImportAll + ImportMem + ImportMemWl + ImportDmaWl,
+    R::TextureId: Send + Clone + 'static,
 {
     let output_scale = output.current_scale().fractional_scale();
     let scale = Scale::from(output_scale);
@@ -91,10 +105,76 @@ where
                 ConstrainAlign::CENTER,
                 output_scale,
             ) {
-                elements.push(SpaceRenderElements::Element(Wrap::from(cropped)));
+                elements.push(AlpiniumRenderElements::Window(
+                    SpaceRenderElements::Element(Wrap::from(cropped)),
+                ));
             }
         } else {
-            elements.extend(surfaces.into_iter().map(SpaceRenderElements::Surface));
+            elements.extend(surfaces.into_iter().map(|surface| {
+                AlpiniumRenderElements::Window(SpaceRenderElements::Surface(surface))
+            }));
+        }
+    }
+
+    let pointer_location = state
+        .seat
+        .get_pointer()
+        .map(|pointer| pointer.current_location());
+    let output_geometry = state.space.output_geometry(output);
+
+    if let (Some(pointer_location), Some(output_geometry)) = (pointer_location, output_geometry) {
+        match &state.cursor_image {
+            CursorImageStatus::Hidden => {}
+            CursorImageStatus::Surface(surface) => {
+                let hotspot = smithay::wayland::compositor::with_states(surface, |surface_state| {
+                    surface_state
+                        .data_map
+                        .get::<smithay::input::pointer::CursorImageSurfaceData>()
+                        .map(|data| data.lock().unwrap().hotspot)
+                        .unwrap_or_default()
+                });
+
+                let cursor_location: Point<f64, Logical> =
+                    pointer_location - hotspot.to_f64() - output_geometry.loc.to_f64();
+                let cursor_elements =
+                    render_elements_from_surface_tree::<R, WaylandSurfaceRenderElement<R>>(
+                        renderer,
+                        surface,
+                        cursor_location.to_physical_precise_round(output_scale),
+                        scale,
+                        1.0,
+                        Kind::Cursor,
+                    );
+
+                let cursor_elements = cursor_elements
+                    .into_iter()
+                    .map(|cursor| {
+                        AlpiniumRenderElements::Window(SpaceRenderElements::Surface(cursor))
+                    })
+                    .collect::<Vec<_>>();
+                elements.splice(0..0, cursor_elements);
+            }
+            CursorImageStatus::Named(_) => {
+                let cursor = state.cursor_manager.current();
+                let cursor_location: Point<f64, Logical> =
+                    pointer_location - cursor.hotspot.to_f64() - output_geometry.loc.to_f64();
+
+                if let Ok(cursor_element) = MemoryRenderBufferRenderElement::from_buffer(
+                    renderer,
+                    {
+                        let physical_location: Point<i32, Physical> =
+                            cursor_location.to_physical_precise_round(output_scale);
+                        physical_location.to_f64()
+                    },
+                    &cursor.buffer,
+                    None,
+                    None,
+                    Some(cursor.size),
+                    Kind::Cursor,
+                ) {
+                    elements.insert(0, AlpiniumRenderElements::Cursor(cursor_element));
+                }
+            }
         }
     }
 

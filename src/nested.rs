@@ -26,6 +26,7 @@ mod grabs {
             pub start_data: PointerGrabStartData<AlpiniumState>,
             pub window: Window,
             pub initial_window_location: Point<i32, Logical>,
+            pub consume_button: bool,
         }
 
         impl PointerGrab<AlpiniumState> for MoveSurfaceGrab {
@@ -61,13 +62,11 @@ mod grabs {
                 handle: &mut PointerInnerHandle<'_, AlpiniumState>,
                 event: &ButtonEvent,
             ) {
-                handle.button(data, event);
+                if !self.consume_button || event.button != self.start_data.button {
+                    handle.button(data, event);
+                }
 
-                // The button is a button code as defined in the
-                // Linux kernel's linux/input-event-codes.h header file, e.g. BTN_LEFT.
-                const BTN_LEFT: u32 = 0x110;
-
-                if !handle.current_pressed().contains(&BTN_LEFT) {
+                if !handle.current_pressed().contains(&self.start_data.button) {
                     // No more buttons are pressed, release the grab.
                     handle.unset_grab(self, data, event.serial, event.time, true);
                 }
@@ -227,6 +226,7 @@ mod grabs {
 
             initial_rect: Rectangle<i32, Logical>,
             last_window_size: Size<i32, Logical>,
+            consume_button: bool,
         }
 
         impl ResizeSurfaceGrab {
@@ -235,6 +235,7 @@ mod grabs {
                 window: Window,
                 edges: ResizeEdge,
                 initial_window_rect: Rectangle<i32, Logical>,
+                consume_button: bool,
             ) -> Self {
                 let initial_rect = initial_window_rect;
 
@@ -251,6 +252,7 @@ mod grabs {
                     edges,
                     initial_rect,
                     last_window_size: initial_rect.size,
+                    consume_button,
                 }
             }
         }
@@ -340,13 +342,11 @@ mod grabs {
                 handle: &mut PointerInnerHandle<'_, AlpiniumState>,
                 event: &ButtonEvent,
             ) {
-                handle.button(data, event);
+                if !self.consume_button || event.button != self.start_data.button {
+                    handle.button(data, event);
+                }
 
-                // The button is a button code as defined in the
-                // Linux kernel's linux/input-event-codes.h header file, e.g. BTN_LEFT.
-                const BTN_LEFT: u32 = 0x110;
-
-                if !handle.current_pressed().contains(&BTN_LEFT) {
+                if !handle.current_pressed().contains(&self.start_data.button) {
                     // No more buttons are pressed, release the grab.
                     handle.unset_grab(self, data, event.serial, event.time, true);
 
@@ -563,7 +563,7 @@ mod grabs {
             Some(())
         }
     }
-    pub use resize_grab::ResizeSurfaceGrab;
+    pub use resize_grab::{ResizeEdge, ResizeSurfaceGrab};
 }
 mod handlers {
     mod compositor {
@@ -662,12 +662,9 @@ mod handlers {
             },
         };
 
-        use crate::{
-            config::LayoutMode,
-            nested::{
-                AlpiniumState,
-                grabs::{MoveSurfaceGrab, ResizeSurfaceGrab},
-            },
+        use crate::nested::{
+            AlpiniumState,
+            grabs::{MoveSurfaceGrab, ResizeSurfaceGrab},
         };
 
         impl XdgShellHandler for AlpiniumState {
@@ -710,10 +707,6 @@ mod handlers {
                 seat: wl_seat::WlSeat,
                 serial: Serial,
             ) {
-                if self.config.mode == LayoutMode::Tiling {
-                    return;
-                }
-
                 let seat = Seat::from_resource(&seat).unwrap();
 
                 let wl_surface = surface.wl_surface();
@@ -727,12 +720,16 @@ mod handlers {
                         .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
                         .unwrap()
                         .clone();
+                    if !self.is_window_floating(&window) {
+                        return;
+                    }
                     let initial_window_location = self.space.element_location(&window).unwrap();
 
                     let grab = MoveSurfaceGrab {
                         start_data,
                         window,
                         initial_window_location,
+                        consume_button: false,
                     };
 
                     pointer.set_grab(self, grab, serial, Focus::Clear);
@@ -746,10 +743,6 @@ mod handlers {
                 serial: Serial,
                 edges: xdg_toplevel::ResizeEdge,
             ) {
-                if self.config.mode == LayoutMode::Tiling {
-                    return;
-                }
-
                 let seat = Seat::from_resource(&seat).unwrap();
 
                 let wl_surface = surface.wl_surface();
@@ -763,6 +756,9 @@ mod handlers {
                         .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
                         .unwrap()
                         .clone();
+                    if !self.is_window_floating(&window) {
+                        return;
+                    }
                     let initial_window_location = self.space.element_location(&window).unwrap();
                     let initial_window_size = window.geometry().size;
 
@@ -777,6 +773,7 @@ mod handlers {
                         window,
                         edges.into(),
                         Rectangle::new(initial_window_location, initial_window_size),
+                        false,
                     );
 
                     pointer.set_grab(self, grab, serial, Focus::Clear);
@@ -899,6 +896,7 @@ mod handlers {
         ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler,
         set_data_device_focus,
     };
+    use smithay::wayland::tablet_manager::TabletSeatHandler;
 
     impl SeatHandler for AlpiniumState {
         type KeyboardFocus = WlSurface;
@@ -912,8 +910,12 @@ mod handlers {
         fn cursor_image(
             &mut self,
             _seat: &Seat<Self>,
-            _image: smithay::input::pointer::CursorImageStatus,
+            image: smithay::input::pointer::CursorImageStatus,
         ) {
+            if let smithay::input::pointer::CursorImageStatus::Named(icon) = &image {
+                self.cursor_manager.set_named(*icon);
+            }
+            self.cursor_image = image;
         }
 
         fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
@@ -950,6 +952,9 @@ mod handlers {
 
     impl OutputHandler for AlpiniumState {}
 
+    impl TabletSeatHandler for AlpiniumState {}
+
+    smithay::delegate_cursor_shape!(AlpiniumState);
     smithay::delegate_compositor!(AlpiniumState);
     smithay::delegate_data_device!(AlpiniumState);
     smithay::delegate_output!(AlpiniumState);
@@ -965,12 +970,20 @@ mod input {
         },
         input::{
             keyboard::{FilterResult, xkb},
-            pointer::{AxisFrame, ButtonEvent, MotionEvent},
+            pointer::{
+                AxisFrame, ButtonEvent, Focus, GrabStartData as PointerGrabStartData, MotionEvent,
+            },
         },
         utils::SERIAL_COUNTER,
     };
 
-    use crate::{keybindings::BindingAction, nested::AlpiniumState};
+    use crate::{
+        keybindings::BindingAction,
+        nested::{
+            AlpiniumState,
+            grabs::{MoveSurfaceGrab, ResizeEdge, ResizeSurfaceGrab},
+        },
+    };
 
     impl AlpiniumState {
         pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
@@ -1034,6 +1047,7 @@ mod input {
                                 BindingAction::FocusNext => state.focus_relative(false),
                                 BindingAction::FocusPrevious => state.focus_relative(true),
                                 BindingAction::CloseFocused => state.close_focused_window(),
+                                BindingAction::ToggleFloating => state.toggle_floating(),
                                 BindingAction::ExitCompositor => state.loop_signal.stop(),
                             }
                         }
@@ -1129,6 +1143,56 @@ mod input {
                         crate::pointer_focus::ClickFocusAction::KeepCurrent => {}
                     }
 
+                    if button_state == ButtonState::Pressed && !pointer.is_grabbed() {
+                        let modifiers = self
+                            .seat
+                            .get_keyboard()
+                            .map(|keyboard| keyboard.modifier_state())
+                            .unwrap_or_default();
+                        const BTN_LEFT: u32 = 0x110;
+                        const BTN_RIGHT: u32 = 0x111;
+
+                        if modifiers.logo && (button == BTN_LEFT || button == BTN_RIGHT) {
+                            if let Some(window) = click_target
+                                .as_ref()
+                                .filter(|window| self.is_window_floating(window))
+                            {
+                                if let Some(initial_window_location) =
+                                    self.space.element_location(window)
+                                {
+                                    let start_data = PointerGrabStartData {
+                                        focus: None,
+                                        button,
+                                        location: pointer.current_location(),
+                                    };
+
+                                    if button == BTN_LEFT {
+                                        let grab = MoveSurfaceGrab {
+                                            start_data,
+                                            window: window.clone(),
+                                            initial_window_location,
+                                            consume_button: true,
+                                        };
+                                        pointer.set_grab(self, grab, serial, Focus::Clear);
+                                    } else {
+                                        let initial_window_size = window.geometry().size;
+                                        let grab = ResizeSurfaceGrab::start(
+                                            start_data,
+                                            window.clone(),
+                                            ResizeEdge::BOTTOM_RIGHT,
+                                            smithay::utils::Rectangle::new(
+                                                initial_window_location,
+                                                initial_window_size,
+                                            ),
+                                            true,
+                                        );
+                                        pointer.set_grab(self, grab, serial, Focus::Clear);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     pointer.button(
                         self,
                         &ButtonEvent {
@@ -1188,6 +1252,7 @@ mod state {
     use crate::{
         animation::{AnimationRect, GeometryAnimation},
         config::{Config, LayoutMode},
+        cursor::CursorManager,
         layout::{LayoutRect, master_stack_layout},
     };
     use std::{
@@ -1198,7 +1263,7 @@ mod state {
 
     use smithay::{
         desktop::{PopupManager, Space, Window, WindowSurfaceType},
-        input::{Seat, SeatState},
+        input::{Seat, SeatState, pointer::CursorImageStatus},
         reexports::{
             calloop::{EventLoop, Interest, LoopSignal, Mode, PostAction, generic::Generic},
             wayland_server::{
@@ -1210,6 +1275,7 @@ mod state {
         utils::{Logical, Point, SERIAL_COUNTER},
         wayland::{
             compositor::{CompositorClientState, CompositorState},
+            cursor_shape::CursorShapeManagerState,
             output::OutputManagerState,
             selection::data_device::DataDeviceState,
             shell::xdg::XdgShellState,
@@ -1233,6 +1299,8 @@ mod state {
         pub space: Space<Window>,
         /// Stable order of all live toplevels, including temporarily unmapped ones.
         window_order: Vec<Window>,
+        /// Windows temporarily or permanently removed from the tiling layout.
+        floating_windows: Vec<Window>,
         /// Toplevels whose current surface commit has an attached renderer buffer.
         buffer_attached_windows: Vec<Window>,
         /// Last position retained while a toplevel is unmapped.
@@ -1241,6 +1309,10 @@ mod state {
         focused_window: Option<Window>,
         /// Whether the nested Winit host currently owns keyboard focus.
         host_focused: bool,
+        /// Current pointer image requested by the focused Wayland client.
+        pub cursor_image: CursorImageStatus,
+        pub cursor_manager: CursorManager,
+        _cursor_shape_manager_state: CursorShapeManagerState,
         /// Active move/resize transitions, including completed size transitions
         /// waiting for the client to commit the final configure.
         window_animations: Vec<WindowAnimation>,
@@ -1270,6 +1342,47 @@ mod state {
                 .filter(|window| mapped.contains(window))
                 .cloned()
                 .collect()
+        }
+
+        pub fn is_window_floating(&self, window: &Window) -> bool {
+            self.config.mode == LayoutMode::Floating || self.floating_windows.contains(window)
+        }
+
+        /// Toggle the focused window between the tiling layout and independent placement.
+        pub fn toggle_floating(&mut self) {
+            if self.config.mode != LayoutMode::Tiling {
+                return;
+            }
+            let Some(window) = self.focused_window.clone() else {
+                return;
+            };
+            if !self.space.elements().any(|mapped| mapped == &window) {
+                return;
+            }
+
+            if self.floating_windows.contains(&window) {
+                self.floating_windows.retain(|floating| floating != &window);
+            } else {
+                if let Some(index) = self
+                    .window_animations
+                    .iter()
+                    .position(|animation| animation.window == window)
+                {
+                    let animation = &self.window_animations[index];
+                    let current = if animation.waiting_for_client {
+                        animation.geometry.start_rect()
+                    } else {
+                        animation.geometry.sample(Instant::now())
+                    };
+                    let location =
+                        Point::from((current.x.round() as i32, current.y.round() as i32));
+                    self.space.map_element(window.clone(), location, false);
+                    self.window_animations.remove(index);
+                }
+                self.floating_windows.push(window.clone());
+            }
+
+            self.apply_layout();
         }
 
         /// Find a live tracked toplevel by its root wl_surface.
@@ -1388,6 +1501,7 @@ mod state {
                 .retain(|animation| animation.window != window);
             self.newly_mapped_windows.retain(|mapped| mapped != &window);
             self.window_order.retain(|tracked| tracked != &window);
+            self.floating_windows.retain(|floating| floating != &window);
             self.buffer_attached_windows
                 .retain(|attached| attached != &window);
             self.unmapped_window_locations
@@ -1557,6 +1671,15 @@ mod state {
                 return;
             };
 
+            let tiled_windows: Vec<Window> = windows
+                .into_iter()
+                .filter(|window| !self.floating_windows.contains(window))
+                .collect();
+            if tiled_windows.is_empty() {
+                self.newly_mapped_windows.clear();
+                return;
+            }
+
             let area = LayoutRect::new(
                 output_geometry.loc.x,
                 output_geometry.loc.y,
@@ -1565,13 +1688,13 @@ mod state {
             );
             let placements = master_stack_layout(
                 area,
-                windows.len(),
+                tiled_windows.len(),
                 self.config.outer_gap,
                 self.config.inner_gap,
             );
             let now = Instant::now();
 
-            for (window, placement) in windows.into_iter().zip(placements) {
+            for (window, placement) in tiled_windows.into_iter().zip(placements) {
                 let target = AnimationRect::new(
                     f64::from(placement.x),
                     f64::from(placement.y),
@@ -1785,6 +1908,7 @@ mod state {
             // Initialize protocols needed for displaying windows
             let compositor_state = CompositorState::new::<Self>(&dh);
             let xdg_shell_state = XdgShellState::new::<Self>(&dh);
+            let cursor_shape_manager_state = CursorShapeManagerState::new::<Self>(&dh);
             let shm_state = ShmState::new::<Self>(&dh, vec![]);
             let popups = PopupManager::default();
 
@@ -1825,10 +1949,14 @@ mod state {
 
                 space,
                 window_order: Vec::new(),
+                floating_windows: Vec::new(),
                 buffer_attached_windows: Vec::new(),
                 unmapped_window_locations: Vec::new(),
                 focused_window: None,
                 host_focused: true,
+                cursor_image: CursorImageStatus::default_named(),
+                cursor_manager: CursorManager::new(),
+                _cursor_shape_manager_state: cursor_shape_manager_state,
                 window_animations: Vec::new(),
                 newly_mapped_windows: Vec::new(),
                 loop_signal,

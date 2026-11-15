@@ -1,5 +1,6 @@
 mod animation;
 mod config;
+mod cursor;
 mod keybindings;
 mod layout;
 mod native;
