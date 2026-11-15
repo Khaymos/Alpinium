@@ -7,6 +7,7 @@ mod native;
 mod nested;
 mod pointer_focus;
 mod render;
+mod wallpaper;
 mod window_lifecycle;
 
 use config::Config;

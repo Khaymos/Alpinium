@@ -33,9 +33,10 @@ where
 >;
 
 smithay::backend::renderer::element::render_elements! {
-    pub AlpiniumRenderElements<R, WindowElement, CursorElement> where
+    pub AlpiniumRenderElements<R, WindowElement, WallpaperElement, CursorElement> where
         R: ImportAll + ImportMem + ImportMemWl + ImportDmaWl;
     Window=WindowElement,
+    Wallpaper=WallpaperElement,
     Cursor=CursorElement,
 }
 
@@ -46,7 +47,12 @@ pub fn space_render_elements<R>(
     renderer: &mut R,
     output: &Output,
 ) -> Vec<
-    AlpiniumRenderElements<R, AnimatedSpaceRenderElements<R>, MemoryRenderBufferRenderElement<R>>,
+    AlpiniumRenderElements<
+        R,
+        AnimatedSpaceRenderElements<R>,
+        MemoryRenderBufferRenderElement<R>,
+        MemoryRenderBufferRenderElement<R>,
+    >,
 >
 where
     R: Renderer + ImportAll + ImportMem + ImportMemWl + ImportDmaWl,
@@ -113,6 +119,28 @@ where
             elements.extend(surfaces.into_iter().map(|surface| {
                 AlpiniumRenderElements::Window(SpaceRenderElements::Surface(surface))
             }));
+        }
+    }
+
+    // Wallpaper is placed after windows in the front-to-back list, so it
+    // remains behind every window while still covering the output background.
+    if let (Some(wallpaper), Some(output_geometry)) =
+        (&state.wallpaper, state.space.output_geometry(output))
+    {
+        let placement = wallpaper.placement(output_geometry.size, state.config.wallpaper_mode);
+        let physical_location: Point<i32, Physical> =
+            placement.location.to_physical_precise_round(output_scale);
+
+        if let Ok(wallpaper_element) = MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            physical_location.to_f64(),
+            &wallpaper.buffer,
+            None,
+            placement.source,
+            Some(placement.size),
+            Kind::Unspecified,
+        ) {
+            elements.push(AlpiniumRenderElements::Wallpaper(wallpaper_element));
         }
     }
 

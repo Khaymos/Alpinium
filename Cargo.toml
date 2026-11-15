@@ -17,6 +17,7 @@ smithay = { version = "=0.7.0", default-features = false, features = ["backend_w
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 smithay-drm-extras = { version = "=0.1.0", default-features = false }
 xcursor = "=0.3.11"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 
 [dev-dependencies]
 tempfile = "3.27"

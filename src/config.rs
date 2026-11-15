@@ -7,6 +7,14 @@ use crate::animation::AnimationCurve;
 use crate::keybindings::{Binding, default_bindings};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WallpaperMode {
+    Fill,
+    Fit,
+    Stretch,
+    Center,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LayoutMode {
     Tiling,
     Floating,
@@ -33,6 +41,8 @@ pub struct Config {
     pub outer_gap: u32,
     pub corner_radius: u32,
     pub shadows: bool,
+    pub wallpaper: Option<PathBuf>,
+    pub wallpaper_mode: WallpaperMode,
     pub variables: BTreeMap<String, String>,
     pub bindings: Vec<Binding>,
 }
@@ -54,6 +64,8 @@ impl Default for Config {
             outer_gap: 5,
             corner_radius: 8,
             shadows: true,
+            wallpaper: None,
+            wallpaper_mode: WallpaperMode::Fill,
             bindings: default_bindings("Mod4"),
             variables,
         }
@@ -131,6 +143,49 @@ impl Config {
 
             let expanded = expand_variables(line, &variables, line_number)?;
 
+            if let Some(rest) = expanded
+                .strip_prefix("wallpaper")
+                .filter(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
+            {
+                let value = rest.trim();
+                if value.is_empty() {
+                    return Err(ConfigError::at_line(
+                        line_number,
+                        "wallpaper requires an image path or 'none'",
+                    ));
+                }
+
+                if value == "none" {
+                    config.wallpaper = None;
+                } else {
+                    let unquoted = if (value.starts_with('"') && value.ends_with('"'))
+                        || (value.starts_with('\'') && value.ends_with('\''))
+                    {
+                        &value[1..value.len() - 1]
+                    } else if value.starts_with('"')
+                        || value.ends_with('"')
+                        || value.starts_with('\'')
+                        || value.ends_with('\'')
+                    {
+                        return Err(ConfigError::at_line(
+                            line_number,
+                            "wallpaper path has mismatched quotes",
+                        ));
+                    } else {
+                        value
+                    };
+
+                    if unquoted.is_empty() {
+                        return Err(ConfigError::at_line(
+                            line_number,
+                            "wallpaper path cannot be empty",
+                        ));
+                    }
+                    config.wallpaper = Some(PathBuf::from(unquoted));
+                }
+                continue;
+            }
+
             if let Some(rest) = expanded.strip_prefix("bindsym ") {
                 let mut fields = rest.splitn(2, char::is_whitespace);
                 let combination = fields.next().unwrap_or_default();
@@ -173,6 +228,20 @@ impl Config {
                                 format!(
                                     "unsupported mode '{value}'; expected 'tiling' or 'floating'"
                                 ),
+                            ));
+                        }
+                    };
+                }
+                ["wallpaper_mode", value] => {
+                    config.wallpaper_mode = match *value {
+                        "fill" => WallpaperMode::Fill,
+                        "fit" => WallpaperMode::Fit,
+                        "stretch" => WallpaperMode::Stretch,
+                        "center" => WallpaperMode::Center,
+                        _ => {
+                            return Err(ConfigError::at_line(
+                                line_number,
+                                "wallpaper_mode must be fill, fit, stretch, or center",
                             ));
                         }
                     };
@@ -425,6 +494,32 @@ mod tests {
         assert_eq!(config.outer_gap, 11);
         assert_eq!(config.corner_radius, 12);
         assert!(!config.shadows);
+    }
+
+    #[test]
+    fn parses_wallpaper_path_with_spaces_and_mode() {
+        let config =
+            Config::parse("wallpaper \"/home/tester/My wallpaper.png\"\nwallpaper_mode center\n")
+                .unwrap();
+
+        assert_eq!(
+            config.wallpaper,
+            Some(PathBuf::from("/home/tester/My wallpaper.png"))
+        );
+        assert_eq!(config.wallpaper_mode, WallpaperMode::Center);
+    }
+
+    #[test]
+    fn wallpaper_can_be_disabled_and_modes_are_validated() {
+        let config =
+            Config::parse("wallpaper /tmp/test.png\nwallpaper none\nwallpaper_mode stretch\n")
+                .unwrap();
+        assert_eq!(config.wallpaper, None);
+        assert_eq!(config.wallpaper_mode, WallpaperMode::Stretch);
+
+        let error = Config::parse("wallpaper_mode tiled").unwrap_err();
+        assert_eq!(error.line, Some(1));
+        assert!(error.message.contains("fill"));
     }
 
     #[test]

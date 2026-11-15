@@ -1254,6 +1254,7 @@ mod state {
         config::{Config, LayoutMode},
         cursor::CursorManager,
         layout::{LayoutRect, master_stack_layout},
+        wallpaper::Wallpaper,
     };
     use std::{
         ffi::OsString,
@@ -1312,6 +1313,7 @@ mod state {
         /// Current pointer image requested by the focused Wayland client.
         pub cursor_image: CursorImageStatus,
         pub cursor_manager: CursorManager,
+        pub wallpaper: Option<Wallpaper>,
         _cursor_shape_manager_state: CursorShapeManagerState,
         /// Active move/resize transitions, including completed size transitions
         /// waiting for the client to commit the final configure.
@@ -1942,6 +1944,18 @@ mod state {
             // Get the loop signal, used to stop the event loop
             let loop_signal = event_loop.get_signal();
 
+            let wallpaper =
+                config
+                    .wallpaper
+                    .as_deref()
+                    .and_then(|path| match Wallpaper::load(path) {
+                        Ok(wallpaper) => Some(wallpaper),
+                        Err(error) => {
+                            eprintln!("alpinium: {error}");
+                            None
+                        }
+                    });
+
             Self {
                 start_time,
                 config,
@@ -1956,6 +1970,7 @@ mod state {
                 host_focused: true,
                 cursor_image: CursorImageStatus::default_named(),
                 cursor_manager: CursorManager::new(),
+                wallpaper,
                 _cursor_shape_manager_state: cursor_shape_manager_state,
                 window_animations: Vec::new(),
                 newly_mapped_windows: Vec::new(),
